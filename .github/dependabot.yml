@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Maven dependencies — Quarkus BOM, HiveMQ Client, Jackson, Vert.x, etc.
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - maven
+
+  # GitHub Actions workflow dependencies
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions

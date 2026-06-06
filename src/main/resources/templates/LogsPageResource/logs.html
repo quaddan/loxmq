@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="logs.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>loxmq — Logs</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE. -->
+    <script src="/js/i18n.js"></script>
+    <style>
+        :root {
+            --bg: #0e1116;
+            --bg-panel: #161b22;
+            --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9;
+            --fg-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent-warn: #d29922;
+            --accent-down: #f85149;
+            --accent-up: #3fb950;
+            --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            /* Native UI in light variant. */
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.5;
+        }
+        header {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        header h1 {
+            margin: 0; font-size: 1.25rem; font-weight: 600;
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        header h1 img.logo { height: 96px; width: auto; display: block; }
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        header nav.tabs { display: flex; gap: 0.5rem; }
+        header nav.tabs a {
+            color: var(--fg-dim); text-decoration: none;
+            padding: 0.4rem 1rem; border: 1px solid transparent; border-radius: 4px;
+            font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        header nav.tabs a:hover { color: var(--fg); background: var(--bg-panel-hover); }
+        header nav.tabs a.active { color: var(--accent); border-color: var(--accent); }
+        /* i18n language combobox. */
+        header .lang-switcher {
+            /* Globe icon (inline SVG, fg-dim stroke) pinned to the left ;
+               padding-left clears room for it. Native select arrow stays
+               on the right. */
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 0.55rem center;
+            background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.35rem 0.5rem 0.35rem 1.9rem; font-family: inherit;
+            font-size: 0.8rem; cursor: pointer;
+        }
+        header .lang-switcher:hover { border-color: var(--accent); }
+        main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+        .panel {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            margin: 0 0 1rem 0; font-size: 1rem;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--fg-dim); border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        .toolbar {
+            display: flex; flex-wrap: wrap; gap: 1rem; align-items: center;
+            margin-bottom: 1rem;
+        }
+        .toolbar label {
+            color: var(--fg-dim); font-size: 0.85rem;
+            display: flex; align-items: center; gap: 0.4rem;
+        }
+        .toolbar select, .toolbar input[type=text], .toolbar input[type=number] {
+            background: var(--bg); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.4rem 0.6rem; font-family: var(--mono); font-size: 0.85rem;
+        }
+        .toolbar input[type=number] { width: 6rem; }
+        .toolbar input[type=text] { width: 16rem; }
+        .toolbar button {
+            background: var(--accent); color: var(--bg); border: none; border-radius: 4px;
+            padding: 0.45rem 1rem; font-size: 0.85rem; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .toolbar button:hover { filter: brightness(1.1); }
+        .toolbar button.secondary {
+            background: transparent; color: var(--fg-dim); border: 1px solid var(--border);
+        }
+        .toolbar button.secondary:hover { color: var(--fg); border-color: var(--fg-dim); }
+        .toolbar .status {
+            color: var(--fg-dim); font-size: 0.8rem; margin-left: auto;
+            font-family: var(--mono);
+        }
+        pre.viewer {
+            background: #0a0d12; border: 1px solid var(--border); border-radius: 4px;
+            color: var(--fg); font-family: var(--mono); font-size: 0.8rem;
+            padding: 1rem; margin: 0;
+            height: 70vh; overflow: auto; white-space: pre-wrap; word-break: break-all;
+        }
+        pre.viewer .lvl-error { color: var(--accent-down); }
+        pre.viewer .lvl-warn  { color: var(--accent-warn); }
+        pre.viewer .lvl-info  { color: var(--fg); }
+        pre.viewer .lvl-debug { color: var(--fg-dim); opacity: 0.85; }
+        pre.viewer .lvl-trace { color: var(--fg-dim); opacity: 0.65; }
+        pre.viewer .hl { background: rgba(88, 166, 255, 0.18); border-radius: 2px; }
+        .files {
+            display: flex; flex-wrap: wrap; gap: 0.5rem;
+        }
+        .files button.file {
+            background: var(--bg); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.5rem 0.8rem; font-family: var(--mono); font-size: 0.8rem;
+            cursor: pointer; display: flex; flex-direction: column; align-items: flex-start;
+            min-width: 12rem;
+        }
+        .files button.file:hover { background: var(--bg-panel-hover); border-color: var(--fg-dim); }
+        .files button.file.active { border-color: var(--accent); color: var(--accent); }
+        .files button.file .meta {
+            color: var(--fg-dim); font-size: 0.7rem; margin-top: 0.2rem;
+        }
+        /* Per-file tint on the selection rectangles only (not the viewer).
+           Placed AFTER .active so the file colour wins on `color`, while
+           .active keeps supplying the selection border cue. The .meta line
+           has its own explicit colour, so only the filename span is tinted. */
+        .files button.file.file-application { color: var(--accent-up); }    /* green  */
+        .files button.file.file-warn        { color: var(--accent-warn); }  /* yellow */
+        .files button.file.file-error       { color: var(--accent-down); }  /* red    */
+        .files button.file.file-commands    { color: #79c0ff; }             /* light blue */
+        .files button.file.file-audit       { color: #d2a8ff; }             /* light purple */
+        .empty {
+            color: var(--fg-dim); font-style: italic; font-family: var(--mono);
+            font-size: 0.85rem; padding: 1rem;
+        }
+        footer.foot {
+            color: var(--fg-dim); font-size: 0.75rem; font-family: var(--mono);
+            padding: 1rem 2rem 2rem 2rem; text-align: center;
+        }
+        footer.foot a { color: var(--accent); text-decoration: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/" style="line-height:0;"><img class="logo" src="/images/loxmq-logo-compact.svg" alt=""></a>
+            <span class="vh">loxmq</span>
+        </h1>
+        <nav class="tabs">
+            <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
+            <a href="/users"     data-i18n="nav.users">Users</a>
+            <a href="/logs"      data-i18n="nav.logs" class="active">Logs</a>
+        </nav>
+        <!-- Language combobox. -->
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <section class="panel">
+            <h2 data-i18n="logs.section.files">Available log files</h2>
+            <div class="files" id="files">
+                <span class="empty" data-i18n="common.loading">Loading files…</span>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2 data-i18n="logs.section.viewer">Viewer</h2>
+            <div class="toolbar">
+                <label><span data-i18n="logs.label.lines">Tail</span>
+                    <input type="number" id="tail" min="50" max="5000" step="50" value="500">
+                    <span style="color: var(--fg-dim); font-size: 0.75rem;" data-i18n="logs.label.lines">lines</span>
+                </label>
+                <label data-i18n-attr="title:logs.label.minLevelTitle" title="Shows severity ≥ selected (e.g. WARN → WARN + ERROR). Stack trace continuation lines inherit their parent entry's level."><span data-i18n="logs.label.minLevel">Min level</span>
+                    <select id="level">
+                        <option value="">all</option>
+                        <option value="ERROR">ERROR</option>
+                        <option value="WARN">WARN+</option>
+                        <option value="INFO">INFO+</option>
+                        <option value="DEBUG">DEBUG+</option>
+                        <option value="TRACE">TRACE+</option>
+                    </select>
+                </label>
+                <label><span data-i18n="common.filter">Filter</span>
+                    <input type="text" id="filter" placeholder="substring or regex (case-insensitive)">
+                </label>
+                <button id="refresh" type="button" data-i18n="logs.btn.refresh">Refresh</button>
+                <label style="margin-left: 0.5rem;">
+                    <input type="checkbox" id="auto-refresh"> auto (3s)
+                </label>
+                <span class="status" id="status"></span>
+            </div>
+            <pre class="viewer" id="viewer"></pre>
+        </section>
+    </main>
+
+    <footer class="foot">
+        Server-rendered Qute · talks to
+        <a href="/api/v1/logs">/api/v1/logs</a>
+        ·
+        <a href="/api/v1/logs/application.log?tail=500">/api/v1/logs/&lt;file&gt;?tail=N</a>
+    </footer>
+
+    <script>
+        // ----------------------------------------------------------------
+        //  /logs viewer
+        //
+        //  Vanilla JS, no framework. Talks to /api/v1/logs (list) and
+        //  /api/v1/logs/&lt;name&gt;?tail=N (content). State held in module
+        //  scope ; AbortController on the in-flight fetch so a fast
+        //  file-switch doesn't paint stale content from the previous fetch.
+        // ----------------------------------------------------------------
+        const filesEl    = document.getElementById('files');
+        const viewerEl   = document.getElementById('viewer');
+        const statusEl   = document.getElementById('status');
+        const tailEl     = document.getElementById('tail');
+        const levelEl    = document.getElementById('level');
+        const filterEl   = document.getElementById('filter');
+        const refreshBtn = document.getElementById('refresh');
+        const autoCbx    = document.getElementById('auto-refresh');
+
+        let currentFile = null;
+        let abortCtl    = null;
+        let autoTimer   = null;
+
+        function humanSize(n) {
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            return (n / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        function humanTime(ms) {
+            const d = new Date(ms);
+            // YYYY-MM-DD HH:MM:SS — same shape as the log timestamps.
+            const z = (n) => String(n).padStart(2, '0');
+            return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) +
+                   ' ' + z(d.getHours()) + ':' + z(d.getMinutes()) + ':' + z(d.getSeconds());
+        }
+
+        function levelClass(line) {
+            // Match either our format "<ts>|<thread>|<LEVEL>|..."
+            // or the Quarkus default "...LEVEL  [..." style.
+            if (/\|ERROR\s*\|/.test(line) || / ERROR\s+/.test(line)) return 'lvl-error';
+            if (/\|WARN\s*\|/.test(line)  || / WARN\s+/.test(line))  return 'lvl-warn';
+            if (/\|INFO\s*\|/.test(line)  || / INFO\s+/.test(line))  return 'lvl-info';
+            if (/\|DEBUG\s*\|/.test(line) || / DEBUG\s+/.test(line)) return 'lvl-debug';
+            if (/\|TRACE\s*\|/.test(line) || / TRACE\s+/.test(line)) return 'lvl-trace';
+            return '';
+        }
+
+        // Explicit ranking for severity-≥ filtering. Lower number = more
+        // severe. A line tagged WARN passes the filter "WARN+" but a line
+        // tagged INFO does not. Stack-trace continuation lines (no level
+        // token) inherit their parent entry's level so multi-line ERROR
+        // blocks stay grouped.
+        const LEVEL_RANK = {
+            'ERROR': 0,
+            'WARN':  1,
+            'INFO':  2,
+            'DEBUG': 3,
+            'TRACE': 4
+        };
+
+        function lineLevel(line) {
+            if (/\|ERROR\s*\|/.test(line) || / ERROR\s+/.test(line)) return 'ERROR';
+            if (/\|WARN\s*\|/.test(line)  || / WARN\s+/.test(line))  return 'WARN';
+            if (/\|INFO\s*\|/.test(line)  || / INFO\s+/.test(line))  return 'INFO';
+            if (/\|DEBUG\s*\|/.test(line) || / DEBUG\s+/.test(line)) return 'DEBUG';
+            if (/\|TRACE\s*\|/.test(line) || / TRACE\s+/.test(line)) return 'TRACE';
+            return null;
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function applyClientSideFilters(text) {
+            const level = levelEl.value;
+            // Severity-≥ semantics. maxRank = +∞ when no level filter
+            // (= keep everything). Else maxRank = the selected level's rank,
+            // so any line with rank ≤ maxRank passes.
+            const maxRank = (level && LEVEL_RANK[level] !== undefined)
+                            ? LEVEL_RANK[level]
+                            : Infinity;
+            const filterRaw = filterEl.value.trim();
+            let filterRe = null;
+            if (filterRaw) {
+                try { filterRe = new RegExp(filterRaw, 'i'); }
+                catch (e) {
+                    // Treat invalid regex as plain substring (case-insensitive).
+                    // Escape regex metacharacters and fall back to a literal substring match.
+                    const esc = filterRaw.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+                    filterRe = new RegExp(esc, 'i');
+                }
+            }
+            const lines = text.split('\n');
+            const out = [];
+            // Track the current entry's level so stack-trace continuation
+            // lines (no level token) inherit it. Without this, a "WARN+"
+            // filter would drop the stack trace following an ERROR header
+            // because none of the continuation lines carry a level on their
+            // own. Initial value is null → continuation lines BEFORE the
+            // first leveled entry are treated as "unknown" and pass unless
+            // a regex filter is on.
+            let entryLevel = null;
+            for (const line of lines) {
+                const lvl = lineLevel(line);
+                if (lvl != null) entryLevel = lvl;
+                if (maxRank !== Infinity) {
+                    // Entry without a known level → keep only if the
+                    // user picked "all" (handled by maxRank===Infinity
+                    // above). With a level filter active, treat
+                    // unknown-level lines as non-matching.
+                    if (entryLevel == null) continue;
+                    if (LEVEL_RANK[entryLevel] > maxRank) continue;
+                }
+                if (filterRe && !filterRe.test(line)) continue;
+                const cls = levelClass(line);
+                let html = escapeHtml(line);
+                if (filterRe) {
+                    // Highlight matches on the escaped HTML.
+                    html = html.replace(filterRe, (m) => '<span class="hl">' + m + '</span>');
+                }
+                out.push(cls ? '<span class="' + cls + '">' + html + '</span>' : html);
+            }
+            return out.join('\n');
+        }
+
+        // Smart auto-scroll : preserve the operator's scroll position when
+        // they're reading history, auto-scroll only if they were within
+        // `tolerance` px of the bottom. Same convention as terminal tail
+        // tools / browser dev consoles.
+        function isViewerAtBottom(tolerance) {
+            tolerance = tolerance || 50;
+            return viewerEl.scrollHeight - viewerEl.scrollTop - viewerEl.clientHeight < tolerance;
+        }
+
+        // Preferred ordering for the file buttons. Matches the operator's
+        // mental model of severity / chronology :
+        //   application → warn → error → commands → audit
+        // Files outside this list fall through to alphabetical order
+        // after the known ones (rotation backups like application.log.1
+        // stay grouped with their main file because they share the
+        // "application" prefix).
+        const FILE_ORDER = ['application', 'warn', 'error', 'commands', 'audit'];
+
+        function fileSortKey(name) {
+            // Strip extension(s) — "application.log", "application.log.1"
+            // → "application". Returns the index in FILE_ORDER for
+            // ranking, or +Infinity for unknown names (sorted after).
+            const base = name.split('.')[0];
+            const idx  = FILE_ORDER.indexOf(base);
+            return idx === -1 ? FILE_ORDER.length : idx;
+        }
+
+        function sortFiles(files) {
+            return files.slice().sort(function (a, b) {
+                const ka = fileSortKey(a.name);
+                const kb = fileSortKey(b.name);
+                if (ka !== kb) return ka - kb;
+                // Same prefix → keep alphabetical (so .log before .log.1).
+                return a.name.localeCompare(b.name);
+            });
+        }
+
+        // Maps a file name to its per-file tint class (see the CSS block).
+        // Reuses FILE_ORDER so the known bases stay the single source of
+        // truth ; rotation backups (application.log.1) share their main
+        // file's prefix → same colour. Unknown files get no tint class.
+        function fileColorClass(name) {
+            const base = name.split('.')[0];
+            return FILE_ORDER.indexOf(base) !== -1 ? ' file-' + base : '';
+        }
+
+        async function loadFiles() {
+            try {
+                const r = await fetch('/api/v1/logs');
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                const data = await r.json();
+                if (!data || data.length === 0) {
+                    filesEl.innerHTML = '<span class="empty">No log files yet — nothing flushed to disk so far.</span>';
+                    return;
+                }
+                filesEl.innerHTML = '';
+                for (const f of sortFiles(data)) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'file' + fileColorClass(f.name) + (f.name === currentFile ? ' active' : '');
+                    btn.dataset.name = f.name;
+                    btn.innerHTML =
+                        '<span>' + escapeHtml(f.name) + '</span>' +
+                        '<span class="meta">' + humanSize(f.size) + ' · ' + humanTime(f.lastModified) + '</span>';
+                    btn.addEventListener('click', () => selectFile(f.name));
+                    filesEl.appendChild(btn);
+                }
+            } catch (e) {
+                filesEl.innerHTML = '<span class="empty">Could not list files (' + escapeHtml(e.message) + ')</span>';
+            }
+        }
+
+        function selectFile(name) {
+            currentFile = name;
+            for (const btn of filesEl.querySelectorAll('button.file')) {
+                btn.classList.toggle('active', btn.dataset.name === name);
+            }
+            loadContent();
+        }
+
+        async function loadContent() {
+            if (!currentFile) {
+                viewerEl.textContent = 'Select a log file above to view its contents.';
+                return;
+            }
+            // Cancel any in-flight request.
+            if (abortCtl) { abortCtl.abort(); }
+            abortCtl = new AbortController();
+
+            const tail = Math.max(1, Math.min(5000, parseInt(tailEl.value, 10) || 500));
+            statusEl.textContent = 'loading ' + currentFile + ' (tail=' + tail + ')…';
+            try {
+                const r = await fetch(
+                    '/api/v1/logs/' + encodeURIComponent(currentFile) + '?tail=' + tail,
+                    { signal: abortCtl.signal });
+                if (!r.ok) {
+                    const txt = await r.text();
+                    viewerEl.textContent = 'HTTP ' + r.status + ' — ' + txt;
+                    statusEl.textContent = 'error';
+                    return;
+                }
+                const text = await r.text();
+                // Smart auto-scroll : remember if the operator was at the
+                // bottom BEFORE we replace the content. If yes, scroll to
+                // the new bottom after render ; otherwise preserve their
+                // scroll position so they can keep reading history without
+                // being yanked back by every auto-refresh tick.
+                const wasAtBottom = isViewerAtBottom();
+                const savedScroll = viewerEl.scrollTop;
+                const html = applyClientSideFilters(text);
+                viewerEl.innerHTML = html || '<span class="empty">No lines match the current filter.</span>';
+                if (wasAtBottom) {
+                    viewerEl.scrollTop = viewerEl.scrollHeight;
+                } else {
+                    // Best-effort preservation — the new content may
+                    // be longer/shorter than the old, but the absolute
+                    // offset stays close enough for the operator's
+                    // reading window not to jump.
+                    viewerEl.scrollTop = savedScroll;
+                }
+                const total = text ? text.split('\n').length : 0;
+                statusEl.textContent = currentFile + ' · ' + total + ' lines · refreshed ' + humanTime(Date.now());
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+                viewerEl.textContent = 'fetch failed: ' + e.message;
+                statusEl.textContent = 'error';
+            }
+        }
+
+        // Refresh both the file list (size/mtime) and the content of the
+        // currently selected file. Logback rotates files in place — without
+        // re-fetching the list, the sidebar shows the stat of the now-renamed
+        // file (e.g. warn.log = 387 B at 21:54) while the viewer reads the
+        // freshly-created empty warn.log (0 lines), giving an apparent
+        // inconsistency.
+        function refreshAll() {
+            loadFiles();
+            if (currentFile) loadContent();
+        }
+
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            autoTimer = setInterval(refreshAll, 3000);
+        }
+        function stopAutoRefresh() {
+            if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+        }
+
+        refreshBtn.addEventListener('click', refreshAll);
+        autoCbx.addEventListener('change', () => autoCbx.checked ? startAutoRefresh() : stopAutoRefresh());
+        levelEl.addEventListener('change', loadContent);
+        filterEl.addEventListener('input', () => {
+            // Re-apply client-side filters on the already-fetched buffer
+            // without round-tripping. The buffer is in the viewer's
+            // current text — but we don't keep raw text, so refetch.
+            // (Cheap : even at tail=5000 it's a sub-100ms HTTP round trip
+            // against localhost.)
+            if (currentFile) loadContent();
+        });
+        tailEl.addEventListener('change', loadContent);
+
+        window.addEventListener('pagehide', () => {
+            // Abort any in-flight fetch + clear timer when the operator
+            // navigates away.
+            if (abortCtl) abortCtl.abort();
+            stopAutoRefresh();
+        });
+
+        loadFiles();
+    </script>
+</body>
+</html>

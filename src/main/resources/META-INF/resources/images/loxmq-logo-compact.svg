@@ -1,0 +1,92 @@
+<svg width="680" height="285" viewBox="0 0 680 285" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>LoxMQ</title>
+  <desc>LoxMQ — Loxone Miniserver bridge for MQTT, AMQP and beyond.</desc>
+
+  <!-- Compact lockup: icon + "LoxMQ" wordmark only. Same artwork as
+       loxmq-logo.svg but without the tagline text and the bottom accent
+       line — meant for in-app headers where the strapline is redundant.
+       The full logo (with tagline) stays the doc/README banner. -->
+
+  <!-- ============ ICON: bridge between Miniserver and broker ============ -->
+
+  <!-- LEFT: Smart home (V3 outline pentagon house, no door, with circuit pattern interior from the latest iteration) -->
+  <g transform="translate(170, 50)">
+    <!-- Subtle filled halo behind the house silhouette -->
+    <path d="M 2,43 L 40,10 L 78,43 L 78,70 L 2,70 Z" fill="#10B981" opacity="0.10"/>
+    <!-- House silhouette: thick green outline, no fill (V3 style) -->
+    <path d="M 2,43 L 40,10 L 78,43 L 78,70 L 2,70 Z"
+          fill="none" stroke="#10B981" stroke-width="4"
+          stroke-linejoin="round" stroke-linecap="round"/>
+    <!-- Cyan signal pips above the roof apex (V3 element: wireless connectivity, gradient opacity) -->
+    <circle cx="40" cy="3"  r="2.5" fill="#06B6D4"/>
+    <circle cx="40" cy="-3" r="2.5" fill="#06B6D4" opacity="0.55"/>
+    <circle cx="40" cy="-9" r="2.5" fill="#06B6D4" opacity="0.28"/>
+    <!-- Central hexagonal hub (the Miniserver / signal processor), shifted up to occupy the upper half of the house -->
+    <path d="M 40,46.5 L 43.46,48.5 L 43.46,52.5 L 40,54.5 L 36.54,52.5 L 36.54,48.5 Z"
+          fill="none" stroke="#10B981" stroke-width="1.5" stroke-linejoin="round"/>
+    <!-- Top trace (straight) -->
+    <line x1="40" y1="46.5" x2="40" y2="42" stroke="#10B981" stroke-width="1.2"/>
+    <circle cx="40" cy="40.5" r="1.3" fill="#10B981"/>
+    <!-- Upper-right trace (L-bend, terminal spread further to fit the wider V3 body) -->
+    <polyline points="43.46,48.5 55,48.5 55,44" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+    <circle cx="55" cy="43" r="1.3" fill="#10B981"/>
+    <!-- Lower-right trace (L-bend) -->
+    <polyline points="43.46,52.5 55,52.5 55,57" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+    <circle cx="55" cy="58" r="1.3" fill="#10B981"/>
+    <!-- Bottom trace (straight) -->
+    <line x1="40" y1="54.5" x2="40" y2="59" stroke="#10B981" stroke-width="1.2"/>
+    <circle cx="40" cy="60.5" r="1.3" fill="#10B981"/>
+    <!-- Lower-left trace (L-bend) -->
+    <polyline points="36.54,52.5 25,52.5 25,57" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+    <circle cx="25" cy="58" r="1.3" fill="#10B981"/>
+    <!-- Upper-left trace (L-bend) -->
+    <polyline points="36.54,48.5 25,48.5 25,44" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+    <circle cx="25" cy="43" r="1.3" fill="#10B981"/>
+  </g>
+
+  <!-- Data lines emerging from Miniserver -->
+  <line x1="138" y1="80"  x2="158" y2="80"  stroke="#10B981" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+  <line x1="130" y1="100" x2="158" y2="100" stroke="#10B981" stroke-width="2" opacity="0.65" stroke-linecap="round"/>
+  <line x1="138" y1="120" x2="158" y2="120" stroke="#10B981" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+
+  <!-- RIGHT: MQTT broker (concentric rings + topic dots) -->
+  <g transform="translate(420, 50)">
+    <circle cx="40" cy="40" r="47" fill="#8B5CF6" opacity="0.10"/>
+    <circle cx="40" cy="40" r="40" fill="none" stroke="#8B5CF6" stroke-width="3"/>
+    <circle cx="40" cy="40" r="28" fill="none" stroke="#3B82F6" stroke-width="3"/>
+    <circle cx="40" cy="40" r="15" fill="#6366F1"/>
+    <circle cx="40" cy="40" r="5" fill="#FFFFFF" opacity="0.9"/>
+    <circle cx="40" cy="0"  r="3" fill="#8B5CF6"/>
+    <circle cx="40" cy="80" r="3" fill="#8B5CF6"/>
+    <circle cx="0"  cy="40" r="3" fill="#8B5CF6"/>
+    <circle cx="80" cy="40" r="3" fill="#8B5CF6"/>
+    <circle cx="68" cy="12" r="2.5" fill="#3B82F6"/>
+    <circle cx="68" cy="68" r="2.5" fill="#3B82F6"/>
+    <circle cx="12" cy="68" r="2.5" fill="#3B82F6"/>
+    <circle cx="12" cy="12" r="2.5" fill="#3B82F6"/>
+  </g>
+
+  <!-- Data lines extending from broker -->
+  <line x1="502" y1="80"  x2="522" y2="80"  stroke="#8B5CF6" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+  <line x1="502" y1="100" x2="530" y2="100" stroke="#8B5CF6" stroke-width="2" opacity="0.65" stroke-linecap="round"/>
+  <line x1="502" y1="120" x2="522" y2="120" stroke="#8B5CF6" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+
+  <!-- Flow arc -->
+  <path d="M 258,90 Q 340,28 422,90" fill="none" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="3 5" opacity="0.7"/>
+
+  <!-- Messages in flight (green -> cyan -> RED active -> indigo -> purple) -->
+  <circle cx="285" cy="72" r="3"   fill="#10B981"/>
+  <circle cx="312" cy="55" r="3.5" fill="#06B6D4"/>
+  <circle cx="340" cy="46" r="11"  fill="#EF4444" opacity="0.25"/>
+  <circle cx="340" cy="46" r="6.5" fill="#EF4444"/>
+  <circle cx="340" cy="46" r="2.5" fill="#FFFFFF"/>
+  <circle cx="368" cy="55" r="3.5" fill="#6366F1"/>
+  <circle cx="395" cy="72" r="3"   fill="#8B5CF6"/>
+
+  <!-- ============ WORDMARK ============ -->
+  <text x="340" y="245"
+        font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif"
+        font-size="92" font-weight="700" text-anchor="middle" letter-spacing="-2.5">
+    <tspan fill="#10B981">L</tspan><tspan fill="#06B6D4">o</tspan><tspan fill="#3B82F6">x</tspan><tspan fill="#6366F1">M</tspan><tspan fill="#8B5CF6">Q</tspan>
+  </text>
+</svg>

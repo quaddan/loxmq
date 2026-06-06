@@ -1,0 +1,24 @@
+# EditorConfig — https://editorconfig.org
+#
+# Editor-agnostic baseline that mirrors the project's manual code style
+# (Allman braces, spaces inside parens/generics, 4-space indent, no tabs).
+# Spotless already enforces trailing-whitespace + final-newline on
+# src/**/*.java; this file extends the same hygiene to every editor and every
+# tracked file type.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# YAML (Quarkus profiles, GitHub workflows, dependabot) is 2-space by convention.
+[*.{yml,yaml}]
+indent_size = 2
+
+# Markdown: trailing spaces are significant (hard line breaks) — do not trim.
+[*.md]
+trim_trailing_whitespace = false

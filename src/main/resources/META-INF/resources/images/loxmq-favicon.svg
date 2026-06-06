@@ -1,0 +1,11 @@
+<svg width="64" height="64" viewBox="-5 -5 90 90" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>LoxMQ</title>
+  <desc>LoxMQ favicon — simplified house outline with central hexagonal hub.</desc>
+
+  <!-- House outline (thicker stroke for visibility at small sizes) -->
+  <path d="M 2,43 L 40,10 L 78,43 L 78,70 L 2,70 Z"
+        fill="none" stroke="#10B981" stroke-width="6"
+        stroke-linejoin="round" stroke-linecap="round"/>
+  <!-- Filled hexagonal hub centered in the body (no traces, kept simple for tiny rendering) -->
+  <path d="M 40,49.5 L 46.06,53 L 46.06,60 L 40,63.5 L 33.94,60 L 33.94,53 Z" fill="#10B981"/>
+</svg>

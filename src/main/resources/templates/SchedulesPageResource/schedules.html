@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="schedules.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>loxmq — Schedules</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE. Loaded sync (NOT defer) so that `t()` is
+         defined before the inline JS at the end of body runs
+         (renderBuilder calls t() at parse-time). The
+         data-i18n / data-i18n-switcher attributes are resolved at DOMContentLoaded
+         (the module's internal event listener). Initial detection:
+         localStorage('lang') > navigator.language > 'en'. The module exposes
+         t(), setLang(), getLang(), applyI18n() on window. -->
+    <script src="/js/i18n.js"></script>
+    <style>
+        :root {
+            --bg: #0e1116;
+            --bg-panel: #161b22;
+            --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9;
+            --fg-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent-warn: #d29922;
+            --accent-down: #f85149;
+            --accent-up: #3fb950;
+            --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            /* color-scheme: dark makes the browser render the native UI
+               (date picker icon, scrollbars, …) in light/grey variant
+               adapted to the dark background. The calendar icon of
+               <input type="date"> becomes a readable light grey instead of the
+               near-invisible default black-on-black. */
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.5;
+        }
+        header {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        header h1 {
+            margin: 0; font-size: 1.25rem; font-weight: 600;
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        /* Logo + page suffix. Same height as dashboard for visual
+           continuity when navigating between pages. */
+        header h1 img.logo { height: 96px; width: auto; display: block; }
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        header nav.tabs { display: flex; gap: 0.5rem; }
+        header nav.tabs a {
+            color: var(--fg-dim); text-decoration: none;
+            padding: 0.4rem 1rem; border: 1px solid transparent; border-radius: 4px;
+            font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        header nav.tabs a:hover { color: var(--fg); background: var(--bg-panel-hover); }
+        header nav.tabs a.active { color: var(--accent); border-color: var(--accent); }
+        /* Language combobox in the header (i18n FR/EN/DE).
+           Minimal style aligned with the tabs (font-size, border, padding). */
+        header .lang-switcher {
+            /* Globe icon (inline SVG, fg-dim stroke) pinned to the left ;
+               padding-left clears room for it. Native select arrow stays
+               on the right. */
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 0.55rem center;
+            background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.35rem 0.5rem 0.35rem 1.9rem; font-family: inherit;
+            font-size: 0.8rem; cursor: pointer;
+        }
+        header .lang-switcher:hover { border-color: var(--accent); }
+        main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+        .panel {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            margin: 0 0 1rem 0; font-size: 1rem;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--fg-dim); border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        /* Mirror of /users panel-toolbar (Users page line ~177). Lets
+           h2 + controls group (Refresh / auto-refresh
+           toggle) align on the same row. */
+        .panel-toolbar {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 0.5rem;
+        }
+        .panel-toolbar h2 {
+            margin: 0; border: 0; padding: 0;
+        }
+        table.entries {
+            width: 100%; border-collapse: collapse;
+            font-family: var(--mono); font-size: 0.85rem;
+        }
+        table.entries th, table.entries td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border); text-align: left; vertical-align: top;
+        }
+        table.entries th {
+            color: var(--fg-dim); text-transform: uppercase;
+            font-size: 0.7rem; letter-spacing: 0.05em; border-bottom-width: 2px;
+        }
+        table.entries tr:hover { background: var(--bg-panel-hover); }
+        table.entries td.actions { white-space: nowrap; text-align: right; }
+        button {
+            background: var(--bg-panel-hover); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.4rem 0.8rem; font-size: 0.8rem; cursor: pointer;
+        }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button.btn-danger { background: #b62324; color: #fff; border-color: #b62324; }
+        button.btn-danger:hover { background: #cf2e2e; }
+        /* `.btn-primary` mirror of /users style (line 125 there).
+           Accent blue + black text + more generous padding for the
+           "primary action" usage (Add schedule, Save changes, etc.). */
+        button.btn-primary {
+            background: var(--accent); color: #000;
+            border-color: var(--accent);
+            padding: 0.55rem 1.2rem; font-size: 0.85rem; font-weight: 600;
+        }
+        button.btn-primary:hover { background: #79b8ff; }
+        /* Chip for the "Currently" column (computed status). Mirror of
+           .badge in users.html — compact pill, uniform black text
+           (white on red lacked contrast). bg and title are set
+           inline so the STATUS_BADGE_SCHED map can drive the
+           colour without a CSS class per kind. */
+        .chip {
+            display: inline-block; padding: 0.12rem 0.55rem;
+            border-radius: 11px; font-size: 0.7rem;
+            font-family: var(--mono); font-weight: 600;
+            white-space: nowrap;
+        }
+        /* Edit button reuses the default button style (dark grey) to
+           match View/Edit in /users. The Delete button stays red,
+           the primary Add button stays blue. */
+        /* Edit modal (mirror users.html modal). Backdrop + centered panel.
+           The modal contains a copy of the Add form with IDs prefixed
+           "edit-" so they don't collide with the inline form. */
+        #edit-modal {
+            display: none;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7); z-index: 100;
+            align-items: center; justify-content: center;
+        }
+        #edit-modal.open { display: flex; }
+        #edit-modal .modal-card {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 6px; max-width: 800px; width: 92%;
+            max-height: 90vh; overflow-y: auto; padding: 1.5rem;
+        }
+        #edit-modal h2 {
+            margin: 0 0 1rem 0; font-size: 1rem;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--fg-dim); border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        #edit-modal .modal-footer {
+            margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 0.5rem;
+            border-top: 1px solid var(--border); padding-top: 1rem;
+        }
+        /* Edit modal form layout fix.
+           The base .entry-form uses a 5-column grid
+           (1fr 1fr 1fr 2fr auto) sized for the inline Add form
+           which takes the full viewport width (~1400px). In the
+           modal (max-width 800px), these 5 columns become too
+           narrow: the calMode 4 cal-attr-builder (Yearly timespan
+           = 5 sub-controls) overflows its cell, creates a horizontal
+           scrollbar and wraps vertically (broken render).
+           Solution: override with a 2-column grid (1fr 2fr) that places
+             Name | Operating mode      on the 1st row
+             Calendar mode | Cal-attrs  on the 2nd row
+           The hidden #edit-uuid is taken out of the grid with display:none
+           (otherwise it consumes an invisible grid cell).
+           padding-bottom = margin for the "Sent to Miniserver →" preview
+           in position: absolute which would otherwise collide with edit-status-bar.
+           600px media query fallback to single column for mobile. */
+        #edit-modal form.entry-form {
+            grid-template-columns: 1fr 2fr;
+            gap: 1rem;
+            padding-bottom: 2rem;
+        }
+        #edit-modal form.entry-form > input[type="hidden"] {
+            display: none;
+        }
+        @media (max-width: 600px) {
+            #edit-modal form.entry-form {
+                grid-template-columns: 1fr;
+            }
+        }
+        form.entry-form {
+            display: grid;
+            /* Col 4 widened (2fr) to accommodate the calModeAttr builder
+               which may hold up to 4 dropdowns + 1 separator (cal mode 4
+               = Yearly timespan). Stays workable for the narrow modes
+               (specific date = 1 input) because the builder has its own
+               flex-wrap.
+               max-width 1400px to avoid ugly spreading on
+               ultrawide screens (>1600px). On a standard screen
+               (laptop 1366-1920px), the form takes the full available
+               width naturally. */
+            grid-template-columns: 1fr 1fr 1fr 2fr auto;
+            gap: 0.75rem; align-items: end;
+            max-width: 1400px;
+        }
+        form.entry-form label {
+            display: flex; flex-direction: column; gap: 0.25rem;
+            font-size: 0.75rem; text-transform: uppercase; color: var(--fg-dim);
+        }
+        form.entry-form input, form.entry-form select {
+            background: var(--bg); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.4rem 0.6rem; font-family: var(--mono); font-size: 0.85rem;
+        }
+        #status-bar {
+            margin-top: 0.5rem; font-family: var(--mono); font-size: 0.8rem;
+            min-height: 1.4em;
+        }
+        #status-bar.err { color: var(--accent-down); }
+        #status-bar.ok  { color: var(--accent-up); }
+        footer {
+            padding: 1rem 2rem; color: var(--fg-dim); font-size: 0.8rem;
+            text-align: center; border-top: 1px solid var(--border);
+        }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/" style="line-height:0;"><img class="logo" src="/images/loxmq-logo-compact.svg" alt=""></a>
+            <span class="vh">loxmq</span>
+        </h1>
+        <nav class="tabs">
+            <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/schedules" data-i18n="nav.schedules" class="active">Schedules</a>
+            <a href="/users"     data-i18n="nav.users">Users</a>
+            <a href="/logs"      data-i18n="nav.logs">Logs</a>
+        </nav>
+        <!-- Language combobox. The i18n.js module (loaded in <head>)
+             automatically wires up the change handler and syncs the
+             current value at boot. -->
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <section class="panel">
+            <h2 data-i18n="schedules.add.title">Add a schedule entry</h2>
+            <form class="entry-form" id="entry-form">
+                <label><span data-i18n="schedules.field.name">Name</span>
+                    <input type="text" name="name" required data-i18n-attr="placeholder:schedules.placeholder.name" placeholder="e.g. Summer vacation" maxlength="100">
+                </label>
+                <!-- Op-mode picker. Server-render injects
+                     OP_MODES = { "0": "At the office", "1": "Living room", ... }
+                     from LoxApp3MetadataResolver. If empty (LoxAPP3 not
+                     yet loaded), we fall back to a generic number input
+                     so the page doesn't break.
+                     Labels via i18n FR/EN/DE. -->
+                <label><span data-i18n="schedules.field.opMode">Operating mode</span>
+                    <select name="operatingMode" id="op-mode" required></select>
+                </label>
+                <label><span data-i18n="schedules.field.calMode">Calendar mode</span>
+                    <select name="calMode" id="cal-mode">
+                        <option value="0" data-i18n="schedules.calMode.0">0 — Yearly date</option>
+                        <option value="1" data-i18n="schedules.calMode.1">1 — Easter offset</option>
+                        <option value="2" data-i18n="schedules.calMode.2">2 — Specific date</option>
+                        <option value="3" data-i18n="schedules.calMode.3">3 — Specific timespan</option>
+                        <option value="4" data-i18n="schedules.calMode.4">4 — Yearly timespan</option>
+                        <option value="5" data-i18n="schedules.calMode.5">5 — Weekday</option>
+                    </select>
+                </label>
+                <!-- `<div id="cal-attr-builder">` rendered dynamically based on
+                     `calMode`. Aids user input with:
+                       0 (Yearly date)      → month + day dropdowns
+                       1 (Easter offset)    → signed integer input
+                       2 (Specific date)    → <input type="date">
+                       3 (Specific timespan)→ start + end <input type="date">
+                       4 (Yearly timespan)  → start/end month + day dropdowns
+                       5 (Weekday)          → month + weekday + occurrence
+                     The submit button reads these fields and serializes them into the
+                     slash-delimited string the Miniserver expects (cf. V17 spec
+                     §calendar* commands). A readable "Raw" field at the bottom
+                     stays populated on every edit for operator transparency. -->
+                <!-- The label follows Calendar mode in the grid (col 4 widened
+                     to 2fr above). No `grid-column: 1 / -1` which would
+                     push it onto a new line. The "Sent to
+                     Miniserver → …" preview is in position: absolute, anchored under
+                     the builder; it visually appears under the 1st
+                     select without pushing the other elements.
+                     The outer wrapper label doesn't show "Calendar
+                     attributes" text — redundant with the builder's
+                     sub-labels (Offset, Day/Month, Date, Start/End, etc.)
+                     and would vertically misalign the builder inputs relative
+                     to the selects of the 3 other cells. The <label>
+                     stays to serve as a position:relative anchor for the
+                     absolute preview. -->
+                <label style="position: relative;">
+                    <div id="cal-attr-builder" style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:flex-end;"></div>
+                    <!-- Hidden mirror — present for FormData.get('calModeAttr')
+                         without touching the submit handler. -->
+                    <input type="hidden" name="calModeAttr" id="cal-attr" required>
+                    <!-- Preview in position absolute, anchored under the cell
+                         = under the 1st sub-label of the builder (which is on the left).
+                         No flow, no impact on the alignment of the
+                         selects. -->
+                    <div style="position: absolute; top: 100%; left: 0; margin-top: 0.3rem;
+                                font-family: var(--mono); font-size: 0.75rem; color: var(--fg-dim);
+                                text-transform: none;">
+                        <span data-i18n="schedules.preview">Sent to Miniserver →</span> <code id="cal-attr-preview">—</code>
+                    </div>
+                </label>
+                <button type="submit" class="btn-primary" data-i18n="common.add">Add</button>
+            </form>
+            <div id="status-bar"></div>
+        </section>
+
+        <section class="panel">
+            <!-- Panel-toolbar mirror /users: refresh controls aligned with
+                 the h2. No modal on /schedules → no JS-side
+                 pause-on-modal logic, but the auto checkbox and the ↻ button
+                 are identical to /users for consistency. -->
+            <div class="panel-toolbar">
+                <h2><span data-i18n="schedules.entries.title">Entries</span> (<span id="count">…</span>)</h2>
+                <div style="display:flex; gap:0.5rem; align-items:center;">
+                    <label for="auto-refresh-toggle"
+                           style="font-size:0.75rem; color:var(--fg-dim); display:flex; align-items:center; gap:0.3rem; cursor:pointer;"
+                           data-i18n-attr="title:common.refreshAuto30"
+                           title="Auto-refresh every 30s">
+                        <input type="checkbox" id="auto-refresh-toggle" checked> <span data-i18n="common.auto30s">auto 30s</span>
+                    </label>
+                    <button id="refresh-now" type="button" data-i18n-attr="title:common.refreshNow" title="Refresh now">↻ <span data-i18n="common.refresh">Refresh</span></button>
+                </div>
+            </div>
+            <table class="entries" id="entries-table">
+                <thead>
+                    <tr>
+                        <!-- Op Mode resolved as "Name — ID" via OP_MODES
+                             on the JS side. Headers via i18n FR/EN/DE. -->
+                        <th data-i18n="schedules.table.name">Name</th>
+                        <th data-i18n="schedules.table.opMode">Op&nbsp;Mode</th>
+                        <th data-i18n="schedules.table.calMode">Cal&nbsp;Mode</th>
+                        <th data-i18n="schedules.table.attrs">Attrs</th>
+                        <!-- "Currently" column computed on the JS side
+                             (computeScheduleStatus) — see t() calls. -->
+                        <th data-i18n="schedules.table.currently">Currently</th>
+                        <th class="actions" data-i18n="common.actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody><!-- populated by JS --></tbody>
+            </table>
+        </section>
+    </main>
+
+    <!-- Edit modal. Surface for PUT /api/v1/schedules/[uuid]. Form clone of
+         the Add form with IDs prefixed "edit-" for coexistence without
+         collision. -->
+    <div id="edit-modal" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title">
+        <div class="modal-card">
+            <h2 id="edit-modal-title" data-i18n="schedules.edit.title">Edit schedule entry</h2>
+            <form class="entry-form" id="edit-entry-form">
+                <input type="hidden" id="edit-uuid">
+                <label><span data-i18n="schedules.field.name">Name</span>
+                    <input type="text" id="edit-name" name="name" required maxlength="100">
+                </label>
+                <label><span data-i18n="schedules.field.opMode">Operating mode</span>
+                    <select name="operatingMode" id="edit-op-mode" required></select>
+                </label>
+                <label><span data-i18n="schedules.field.calMode">Calendar mode</span>
+                    <select name="calMode" id="edit-cal-mode">
+                        <option value="0" data-i18n="schedules.calMode.0">0 — Yearly date</option>
+                        <option value="1" data-i18n="schedules.calMode.1">1 — Easter offset</option>
+                        <option value="2" data-i18n="schedules.calMode.2">2 — Specific date</option>
+                        <option value="3" data-i18n="schedules.calMode.3">3 — Specific timespan</option>
+                        <option value="4" data-i18n="schedules.calMode.4">4 — Yearly timespan</option>
+                        <option value="5" data-i18n="schedules.calMode.5">5 — Weekday</option>
+                    </select>
+                </label>
+                <!-- Same cleanup as the Add form: "Calendar attributes"
+                     text removed, inner label becomes a cell-level label aligned with
+                     the other labels. -->
+                <label style="position: relative;">
+                    <div id="edit-cal-attr-builder" style="display:flex; flex-wrap:wrap; gap:0.5rem; align-items:flex-end;"></div>
+                    <input type="hidden" name="calModeAttr" id="edit-cal-attr" required>
+                    <div style="position: absolute; top: 100%; left: 0; margin-top: 0.3rem;
+                                font-family: var(--mono); font-size: 0.75rem; color: var(--fg-dim);
+                                text-transform: none;">
+                        <span data-i18n="schedules.preview">Sent to Miniserver →</span> <code id="edit-cal-attr-preview">—</code>
+                    </div>
+                </label>
+            </form>
+            <div id="edit-status-bar" style="margin-top: 1.5rem; font-family: var(--mono); font-size: 0.8rem; min-height: 1.4em;"></div>
+            <div class="modal-footer">
+                <button type="button" id="edit-cancel" data-i18n="common.cancel">Cancel</button>
+                <button type="button" id="edit-save" class="btn-primary" data-i18n="common.saveChanges">Save changes</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="/" data-i18n="common.backToDashboard">← Dashboard</a> ·
+        <a href="/api/v1/schedules">/api/v1/schedules</a> ·
+        <a href="/q/health">/q/health</a>
+    </footer>
+
+    <!--
+      Schedules CRUD UI — talks to /api/v1/schedules.
+      No framework — vanilla JS + fetch. ~150 lines,
+      readable, no dependency.
+    -->
+    <script>
+        // Server-injected operating-modes map (id → display name).
+        // Raw JSON format. Empty {} if LoxAPP3 not yet parsed.
+        var OP_MODES = {opModesJson.raw};
+
+        (function () {
+            var tbody     = document.querySelector('#entries-table tbody');
+            var countEl   = document.getElementById('count');
+            var statusBar = document.getElementById('status-bar');
+            var form      = document.getElementById('entry-form');
+            var calMode   = document.getElementById('cal-mode');
+            var calAttr   = document.getElementById('cal-attr');
+            var opMode    = document.getElementById('op-mode');
+
+            // Populate the op-mode <select> from OP_MODES.
+            // Fallback : if OP_MODES is empty (LoxAPP3 not yet loaded),
+            // replace the <select> with a number input so the page still
+            // works degraded — operator can still create schedules by
+            // typing an ID manually.
+            (function populateOpModes() {
+                var ids = Object.keys(OP_MODES || {})
+                                .map(function (k) { return parseInt(k, 10); })
+                                .filter(function (n) { return !isNaN(n); })
+                                .sort(function (a, b) { return a - b; });
+                if (ids.length === 0) {
+                    // Degraded path — swap to a number input.
+                    var fallback = document.createElement('input');
+                    fallback.type = 'number';
+                    fallback.name = 'operatingMode';
+                    fallback.required = true;
+                    fallback.min = 0;
+                    fallback.max = 99;
+                    fallback.value = '0';
+                    fallback.title = t('schedules.toast.loxApp3');
+                    fallback.id = 'op-mode';
+                    opMode.parentNode.replaceChild(fallback, opMode);
+                    opMode = fallback;
+                    return;
+                }
+                opMode.innerHTML = ids.map(function (id) {
+                    var label = OP_MODES[String(id)] || '?';
+                    // Visible text : "Name — ID" so the operator can see both
+                    // the human-friendly label and the numeric id used by
+                    // the wire format.
+                    return '<option value="' + id + '">' +
+                           escapeHtml(label) + ' — ' + id + '</option>';
+                }).join('');
+            })();
+
+            // CAL_MODE_LABEL is rebuilt via rebuildI18nArrays() from the
+            // schedules.calMode.label.N keys in i18n.js.
+
+            // ----------------------------------------------------------------
+            // calModeAttr builder.
+            //
+            // Each calMode owns a small render function that paints the
+            // appropriate inputs into #cal-attr-builder and a serializer
+            // that reads those inputs and produces the slash-delimited
+            // string the Miniserver expects (cf. V17 spec
+            // §calendarcreateentry).
+            //
+            // The serializer also updates :
+            //   - #cal-attr (hidden input) — picked up by the form's
+            //     FormData on submit. Existing submit handler unchanged.
+            //   - #cal-attr-preview — operator visibility on what
+            //     gets sent on the wire.
+            //
+            // Wire formats (verified against V17 + the read-side decode
+            // in `formatCalModeAttrs` above) :
+            //   0 (Yearly date)       — "M/D"
+            //   1 (Easter offset)     — "<offset>"
+            //   2 (Specific date)     — "YYYY/M/D"
+            //   3 (Specific timespan) — "SY/SM/SD/EY/EM/ED"
+            //   4 (Yearly timespan)   — "SM/SD/EM/ED"  (year-less)
+            //   5 (Weekday)           — "M/WD/WDIM"   (M=13 means "every month",
+            //                                          WD=0..6 Mon..Sun,
+            //                                          WDIM=0..5 every/1st/.../last)
+            // ----------------------------------------------------------------
+            var attrBuilder = document.getElementById('cal-attr-builder');
+            var attrPreview = document.getElementById('cal-attr-preview');
+
+            function selOpts(min, max, current, valueFmt) {
+                var out = '';
+                for (var i = min; i <= max; i++) {
+                    var v = valueFmt ? valueFmt(i) : i;
+                    out += '<option value="' + i + '"' +
+                           (i === current ? ' selected' : '') + '>' + v + '</option>';
+                }
+                return out;
+            }
+            function selFromArray(arr, current) {
+                return arr.map(function (label, i) {
+                    return '<option value="' + i + '"' +
+                           (i === current ? ' selected' : '') + '>' + label + '</option>';
+                }).join('');
+            }
+
+            // i18n FR/EN/DE. The MONTH_NAMES / WEEKDAY_NAME /
+            // WEEKDAY_OCCURRENCE arrays are rebuilt via rebuildI18nArrays() on
+            // every language change ('i18n:changed' event) then the
+            // form builder + the table are re-rendered. At initial
+            // render, t() is already defined because the i18n.js script is loaded
+            // sync in <head>.
+            var MONTH_NAMES        = [];
+            var WEEKDAY_NAME       = [];
+            var WEEKDAY_OCCURRENCE = [];
+            var CAL_MODE_LABEL     = {};
+            function rebuildI18nArrays() {
+                MONTH_NAMES = [];
+                for (var i = 1; i <= 12; i++) MONTH_NAMES.push(t('schedules.month.' + i));
+                WEEKDAY_NAME = [];
+                for (i = 0; i <= 6; i++) WEEKDAY_NAME.push(t('schedules.weekday.' + i));
+                WEEKDAY_OCCURRENCE = [];
+                for (i = 0; i <= 5; i++) WEEKDAY_OCCURRENCE.push(t('schedules.occurrence.' + i));
+                CAL_MODE_LABEL = {};
+                for (i = 0; i <= 5; i++) CAL_MODE_LABEL[i] = t('schedules.calMode.label.' + i);
+            }
+            rebuildI18nArrays();
+            function monthOpts(current, includeEvery) {
+                var html = '';
+                if (includeEvery) {
+                    html += '<option value="13"' +
+                            (current === 13 ? ' selected' : '') + '>' +
+                            t('schedules.builder.everyMonth') + '</option>';
+                }
+                for (var i = 1; i <= 12; i++) {
+                    html += '<option value="' + i + '"' +
+                            (i === current ? ' selected' : '') +
+                            '>' + i + ' — ' + MONTH_NAMES[i - 1] + '</option>';
+                }
+                return html;
+            }
+
+            // Today, used as a sane default for the various date pickers.
+            var TODAY = new Date();
+            function todayISO() {
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                return TODAY.getFullYear() + '-' + pad(TODAY.getMonth() + 1) +
+                       '-' + pad(TODAY.getDate());
+            }
+            function tomorrowISO() {
+                var d = new Date(TODAY); d.setDate(d.getDate() + 1);
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                return d.getFullYear() + '-' + pad(d.getMonth() + 1) +
+                       '-' + pad(d.getDate());
+            }
+
+            // renderBuilder / refreshSerialized accept a namespace
+            // [prefix, builder, attrInput, preview, calModeSelect]. Allows
+            // coexistence of the inline Add form (prefix="") and the Edit
+            // modal (prefix="edit-") without code duplication. All the
+            // builder's internal IDs (cb-m, cb-d, cb-date, etc.) get
+            // the prefix.
+            // (Square brackets in this comment instead of curly braces —
+            // Qute parses `{…}` expressions even in JS comments.)
+            //
+            // Renderers — each paints the builder with controls
+            // pre-filled with sensible defaults.
+            function renderBuilder(ns, mode) {
+                var P = ns.prefix;
+                switch (mode) {
+                    case 0: // Yearly date — day + month dropdowns
+                        // Day before Month for FR/DE (DD/MM), Month before Day
+                        // for English (MM/DD). Internal IDs cb-d / cb-m always
+                        // preserve the wire format regardless of display order.
+                        var c0Day   = '<label>' + t('schedules.builder.day') + ' <select id="' + P + 'cb-d">' + selOpts(1, 31, TODAY.getDate()) + '</select></label>';
+                        var c0Month = '<label>' + t('schedules.builder.month') + ' <select id="' + P + 'cb-m">' + monthOpts(TODAY.getMonth() + 1, false) + '</select></label>';
+                        ns.builder.innerHTML = isMonthFirst() ? (c0Month + c0Day) : (c0Day + c0Month);
+                        break;
+                    case 1: // Easter offset
+                        // Shortened label ("Easter" redundant with the
+                        // calMode 1 dropdown). i18n.
+                        ns.builder.innerHTML =
+                            '<label>' + t('schedules.builder.easterOffset') + ' ' +
+                            '<input type="number" id="' + P + 'cb-off" min="-180" max="180" value="0" style="width:6rem;"></label>' +
+                            '<span style="color:var(--fg-dim); font-size:0.75rem; text-transform:none;">' +
+                            t('schedules.builder.easterHint') + '</span>';
+                        break;
+                    case 2: // Specific date
+                        ns.builder.innerHTML =
+                            '<label>' + t('schedules.builder.date') + ' <input type="date" id="' + P + 'cb-date" value="' + todayISO() + '"></label>';
+                        break;
+                    case 3: // Specific timespan
+                        ns.builder.innerHTML =
+                            '<label>' + t('schedules.builder.start') + ' <input type="date" id="' + P + 'cb-start" value="' + todayISO() + '"></label>' +
+                            '<label>' + t('schedules.builder.end') + ' <input type="date" id="' + P + 'cb-end" value="' + tomorrowISO() + '"></label>';
+                        break;
+                    case 4: // Yearly timespan — day/month pairs
+                        // Day before Month for FR/DE, Month before Day for English.
+                        var c4Sd  = '<label>' + t('schedules.builder.startDay') + ' <select id="' + P + 'cb-sd">' + selOpts(1, 31, TODAY.getDate()) + '</select></label>';
+                        var c4Sm  = '<label>' + t('schedules.builder.startMonth') + ' <select id="' + P + 'cb-sm">' + monthOpts(TODAY.getMonth() + 1, false) + '</select></label>';
+                        var c4Ed  = '<label>' + t('schedules.builder.endDay') + ' <select id="' + P + 'cb-ed">' + selOpts(1, 31, TODAY.getDate()) + '</select></label>';
+                        var c4Em  = '<label>' + t('schedules.builder.endMonth') + ' <select id="' + P + 'cb-em">' + monthOpts(TODAY.getMonth() + 1, false) + '</select></label>';
+                        var c4StartPair = isMonthFirst() ? (c4Sm + c4Sd) : (c4Sd + c4Sm);
+                        var c4EndPair   = isMonthFirst() ? (c4Em + c4Ed) : (c4Ed + c4Em);
+                        ns.builder.innerHTML =
+                            c4StartPair +
+                            '<span style="color:var(--fg-dim);">→</span>' +
+                            c4EndPair;
+                        break;
+                    case 5: // Weekday
+                        ns.builder.innerHTML =
+                            '<label>' + t('schedules.builder.month') + ' <select id="' + P + 'cb-m">' + monthOpts(13, true) + '</select></label>' +
+                            '<label>' + t('schedules.builder.weekday') + ' <select id="' + P + 'cb-wd">' + selFromArray(WEEKDAY_NAME, 0) + '</select></label>' +
+                            '<label>' + t('schedules.builder.occurrence') + ' <select id="' + P + 'cb-wdim">' + selFromArray(WEEKDAY_OCCURRENCE, 0) + '</select></label>';
+                        break;
+                    default:
+                        ns.builder.innerHTML =
+                            '<input type="text" id="' + P + 'cb-raw" style="min-width:20rem;" placeholder="' +
+                            t('schedules.builder.rawPlaceholder') + '">';
+                }
+                // Each input change triggers a re-serialize.
+                ns.builder.querySelectorAll('input, select').forEach(function (el) {
+                    el.addEventListener('input',  function () { refreshSerialized(ns); });
+                    el.addEventListener('change', function () { refreshSerialized(ns); });
+                });
+                refreshSerialized(ns);
+            }
+
+            function intVal(id, fallback) {
+                var el = document.getElementById(id);
+                if (!el) return fallback;
+                var n = parseInt(el.value, 10);
+                return isNaN(n) ? fallback : n;
+            }
+            function dateParts(id) {
+                // <input type="date"> returns "YYYY-MM-DD".
+                var el = document.getElementById(id);
+                if (!el || !el.value) return null;
+                var p = el.value.split('-');
+                return { y: parseInt(p[0], 10), m: parseInt(p[1], 10), d: parseInt(p[2], 10) };
+            }
+
+            function refreshSerialized(ns) {
+                var P = ns.prefix;
+                var mode = parseInt(ns.calModeSelect.value, 10);
+                var serialized = '';
+                switch (mode) {
+                    case 0:
+                        serialized = intVal(P + 'cb-m', 1) + '/' + intVal(P + 'cb-d', 1);
+                        break;
+                    case 1:
+                        serialized = String(intVal(P + 'cb-off', 0));
+                        break;
+                    case 2:
+                        var sd = dateParts(P + 'cb-date');
+                        if (sd) serialized = sd.y + '/' + sd.m + '/' + sd.d;
+                        break;
+                    case 3:
+                        var s = dateParts(P + 'cb-start');
+                        var e = dateParts(P + 'cb-end');
+                        if (s && e) serialized =
+                                s.y + '/' + s.m + '/' + s.d + '/' +
+                                e.y + '/' + e.m + '/' + e.d;
+                        break;
+                    case 4:
+                        serialized =
+                                intVal(P + 'cb-sm', 1) + '/' + intVal(P + 'cb-sd', 1) + '/' +
+                                intVal(P + 'cb-em', 1) + '/' + intVal(P + 'cb-ed', 1);
+                        break;
+                    case 5:
+                        serialized =
+                                intVal(P + 'cb-m', 13) + '/' +
+                                intVal(P + 'cb-wd', 0) + '/' +
+                                intVal(P + 'cb-wdim', 0);
+                        break;
+                    default:
+                        var raw = document.getElementById(P + 'cb-raw');
+                        serialized = raw ? raw.value : '';
+                }
+                ns.attrInput.value = serialized;
+                ns.preview.textContent = serialized || '—';
+            }
+
+            // Namespace for the inline Add form (prefix="").
+            var CREATE_NS = {
+                prefix:        '',
+                builder:       attrBuilder,
+                attrInput:     calAttr,
+                preview:       attrPreview,
+                calModeSelect: calMode
+            };
+
+            calMode.addEventListener('change', function () {
+                renderBuilder(CREATE_NS, parseInt(calMode.value, 10));
+            });
+            // Initial render — matches the default-selected calMode.
+            renderBuilder(CREATE_NS, parseInt(calMode.value, 10));
+
+            // On language change, rebuild the i18n arrays
+            // (MONTH_NAMES, WEEKDAY_*, CAL_MODE_LABEL), re-render the
+            // builder + the table (status texts are computed in
+            // renderEntries via computeScheduleStatus + formatCalModeAttrs).
+            window.addEventListener('i18n:changed', function () {
+                rebuildI18nArrays();
+                renderBuilder(CREATE_NS, parseInt(calMode.value, 10));
+                // If the Edit modal is open, re-render its builder too
+                // (the operator keeps their current selection).
+                if (editModal && editModal.classList.contains('open')) {
+                    renderBuilder(EDIT_NS, parseInt(editCalMode.value, 10));
+                }
+                // Re-render the table to update the status chips
+                // + "Mode Cal." cell + "Attrs" cell + buttons.
+                renderEntries(allEntries);
+            });
+
+            // Pre-fill helper: fills the builder inputs from the
+            // calModeAttrs object returned by /api/v1/schedules. The keys
+            // (startMonth, startDay, easterOffset, …) are the same as
+            // in formatCalModeAttrs. If a key is missing, we keep the
+            // builder default (no crash on undefined).
+            function prefillBuilder(ns, mode, attrs) {
+                var P = ns.prefix;
+                if (!attrs) return;
+                var setVal = function (id, v) {
+                    var el = document.getElementById(P + id);
+                    if (el && v != null) el.value = String(v);
+                };
+                var setDate = function (id, y, m, d) {
+                    var el = document.getElementById(P + id);
+                    if (el && y != null && m != null && d != null) {
+                        var pad = function (n) { return String(n).padStart(2, '0'); };
+                        el.value = y + '-' + pad(m) + '-' + pad(d);
+                    }
+                };
+                switch (mode) {
+                    case 0:
+                        setVal('cb-m', attrs.startMonth);
+                        setVal('cb-d', attrs.startDay);
+                        break;
+                    case 1:
+                        setVal('cb-off', attrs.easterOffset);
+                        break;
+                    case 2:
+                        setDate('cb-date', attrs.startYear, attrs.startMonth, attrs.startDay);
+                        break;
+                    case 3:
+                        setDate('cb-start', attrs.startYear, attrs.startMonth, attrs.startDay);
+                        setDate('cb-end',   attrs.endYear,   attrs.endMonth,   attrs.endDay);
+                        break;
+                    case 4:
+                        setVal('cb-sm', attrs.startMonth);
+                        setVal('cb-sd', attrs.startDay);
+                        setVal('cb-em', attrs.endMonth);
+                        setVal('cb-ed', attrs.endDay);
+                        break;
+                    case 5:
+                        setVal('cb-m',    attrs.startMonth);   // 13 = every month
+                        setVal('cb-wd',   attrs.weekDay);
+                        setVal('cb-wdim', attrs.weekDayInMonth);
+                        break;
+                }
+                refreshSerialized(ns);
+            }
+
+            function setStatus(kind, text) {
+                statusBar.className = kind || '';
+                statusBar.textContent = text || '';
+            }
+
+            function escapeHtml(s) {
+                return String(s == null ? '' : s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            // Loxone V17 returns the calMode attributes EXPLODED into named
+            // fields (startMonth, startDay, easterOffset, …) instead of the
+            // slash-delimited calModeAttr from the spec. This helper formats that
+            // into a per-calMode readable display.
+            //
+            // Date display in DD/MM/YYYY format across the
+            // "Currently" column and the "Cal-mode attributes":
+            // - calMode 0 (Yearly date)       : "DD/MM"
+            // - calMode 1 (Easter offset)     : "Easter +N d"
+            // - calMode 2 (Specific date)     : "DD/MM/YYYY"
+            // - calMode 3 (Specific timespan) : "DD/MM/YYYY → DD/MM/YYYY"
+            // - calMode 4 (Yearly timespan)   : "DD/MM → DD/MM"
+            // - calMode 5 (Weekday)           : "<Nth> <day> of <month>"
+            function pad2(n) {
+                if (n == null) return '?';
+                var s = String(n);
+                return s.length < 2 ? '0' + s : s;
+            }
+
+            // US English uses MM/DD; FR and DE keep DD/MM (Loxone Config
+            // convention). Centralised here so the table cells and the
+            // builder fields stay consistent and so a language switch flips
+            // both in lockstep via the 'i18n:changed' re-render.
+            function isMonthFirst() {
+                try { return window.getLang && window.getLang() === 'en'; }
+                catch (e) { return false; }
+            }
+            function formatDayMonth(day, month) {
+                return isMonthFirst()
+                        ? pad2(month) + '/' + pad2(day)
+                        : pad2(day) + '/' + pad2(month);
+            }
+            function formatDayMonthYear(day, month, year) {
+                return isMonthFirst()
+                        ? pad2(month) + '/' + pad2(day) + '/' + year
+                        : pad2(day) + '/' + pad2(month) + '/' + year;
+            }
+            // WEEKDAY_NAME / WEEKDAY_OCCURRENCE declared near MONTH_NAMES
+            // (line ~492) so they are available in renderBuilder case 5
+            // (initial render = before the var declaration is
+            // executed at this location).
+
+            // ============================================================
+            //  computeScheduleStatus + helpers
+            //  Interprets calMode + calModeAttrs against Date.now() to
+            //  produce a colourable "Currently" status (active / pending
+            //  / inactive / expired / unknown). Mirror of the Users
+            //  computeUserStatus pattern with the V17 business complexity
+            //  (5 calendar modes + Easter algo + Nth weekday of month).
+            // ============================================================
+
+            // Palette identical to the cross-pages STATUS_BADGE (users.html).
+            // All chips have uniform black text (white on red
+            // lacked contrast).
+            var STATUS_BADGE_SCHED = {
+                active:   { bg: 'var(--accent-up)',    fg: '#000' },
+                pending:  { bg: 'var(--accent-warn)',  fg: '#000' },
+                expired:  { bg: 'var(--accent-down)',  fg: '#000' },
+                inactive: { bg: 'var(--fg-dim)',       fg: '#000' },
+                unknown:  { bg: 'var(--accent-down)',  fg: '#000' }
+            };
+
+            // Same-day comparison without touching the hours (DST-safe).
+            function sameDay(a, b) {
+                return a.getFullYear() === b.getFullYear() &&
+                       a.getMonth() === b.getMonth() &&
+                       a.getDate() === b.getDate();
+            }
+
+            // DD/MM/YYYY format for the tooltips and the
+            // "Next: ..." text in the "Currently" column.
+            function fmtDate(d) {
+                return pad2(d.getDate()) + '/' +
+                       pad2(d.getMonth() + 1) + '/' +
+                       d.getFullYear();
+            }
+
+            // Anonymous Gregorian (Meeus/Jones/Butcher) algorithm —
+            // returns the Easter date for a given year.
+            // Reference: V17 OperatingModeSchedule.pdf §calMode 1
+            // mentions "Easter Sunday" but doesn't give an algo; the
+            // standard public version is used by all
+            // modern calendar systems (Loxone included).
+            function easterDate(year) {
+                var a = year % 19;
+                var b = Math.floor(year / 100);
+                var c = year % 100;
+                var d = Math.floor(b / 4);
+                var e = b % 4;
+                var f = Math.floor((b + 8) / 25);
+                var g = Math.floor((b - f + 1) / 3);
+                var h = (19 * a + b - d - g + 15) % 30;
+                var i = Math.floor(c / 4);
+                var k = c % 4;
+                var L = (32 + 2 * e + 2 * i - h - k) % 7;
+                var m = Math.floor((a + 11 * h + 22 * L) / 451);
+                var month = Math.floor((h + L - 7 * m + 114) / 31);
+                var day = ((h + L - 7 * m + 114) % 31) + 1;
+                return new Date(year, month - 1, day);
+            }
+
+            // Nth weekday of a given month. Loxone weekday convention :
+            // 0=Mon..6=Sun. Occurrence : 1-4 = Nth, 5 = last, 0 = every
+            // (caller skips this function in that case). Returns null if
+            // the month doesn't contain N occurrences (5th Monday in
+            // February for example).
+            function nthWeekdayOfMonth(year, month, loxWeekday, n) {
+                // JS getDay() : 0=Sun..6=Sat. Loxone weekday 0=Mon → JS 1.
+                var jsWeekday = (loxWeekday + 1) % 7;
+                var daysInMonth = new Date(year, month, 0).getDate();
+                if (n === 5) {
+                    // Last occurrence — walk back from end of month.
+                    var lastDate = new Date(year, month - 1, daysInMonth);
+                    var daysBack = (lastDate.getDay() - jsWeekday + 7) % 7;
+                    return new Date(year, month - 1, daysInMonth - daysBack);
+                }
+                var firstOfMonth = new Date(year, month - 1, 1);
+                var daysToFirst = (jsWeekday - firstOfMonth.getDay() + 7) % 7;
+                var dayOfMonth = 1 + daysToFirst + (n - 1) * 7;
+                if (dayOfMonth > daysInMonth) return null;
+                return new Date(year, month - 1, dayOfMonth);
+            }
+
+            // Returns [kind, text] following the V17 business rules for
+            // each calMode. text is designed for the tooltip + a
+            // short summary visible in the chip.
+            function computeScheduleStatus(entry) {
+                var mode = entry.calMode;
+                var a    = entry.calModeAttrs || {};
+                var now  = new Date();
+                var Y = now.getFullYear();
+                var M = now.getMonth() + 1;  // 1-12
+                var D = now.getDate();
+                // Loxone weekday : 0=Mon..6=Sun. JS getDay() : 0=Sun..6=Sat.
+                var loxWeekday = (now.getDay() + 6) % 7;
+
+                // All status text via t() i18n.
+                switch (mode) {
+                    case 0: {  // Yearly date (annual recurring)
+                        var sm = a.startMonth, sd = a.startDay;
+                        if (sm == null || sd == null)
+                            return { kind: 'unknown', text: t('schedules.status.missingMonthDay') };
+                        if (M === sm && D === sd)
+                            return { kind: 'active', text: t('schedules.status.activeToday') };
+                        var next = new Date(Y, sm - 1, sd);
+                        if (next.getTime() <= now.getTime())
+                            next = new Date(Y + 1, sm - 1, sd);
+                        return { kind: 'inactive', text: t('schedules.status.next', { date: fmtDate(next) }) };
+                    }
+                    case 1: {  // Easter offset (annual recurring)
+                        var off = a.easterOffset;
+                        if (off == null)
+                            return { kind: 'unknown', text: t('schedules.status.missingEaster') };
+                        var target = new Date(easterDate(Y).getTime() + off * 86400000);
+                        if (sameDay(target, now))
+                            return { kind: 'active',
+                                     text: t('schedules.status.activeTodayEaster',
+                                             { offset: (off >= 0 ? '+' : '') + off }) };
+                        if (target.getTime() < now.getTime())
+                            target = new Date(easterDate(Y + 1).getTime() + off * 86400000);
+                        return { kind: 'inactive', text: t('schedules.status.next', { date: fmtDate(target) }) };
+                    }
+                    case 2: {  // Specific date (one-shot)
+                        var sy = a.startYear, sm2 = a.startMonth, sd2 = a.startDay;
+                        if (sy == null || sm2 == null || sd2 == null)
+                            return { kind: 'unknown', text: t('schedules.status.missingDate') };
+                        var tg = new Date(sy, sm2 - 1, sd2);
+                        if (sameDay(tg, now))
+                            return { kind: 'active', text: t('schedules.status.activeTodayOneShot') };
+                        if (tg.getTime() > now.getTime())
+                            return { kind: 'pending', text: t('schedules.status.starts', { date: fmtDate(tg) }) };
+                        return { kind: 'expired', text: t('schedules.status.was', { date: fmtDate(tg) }) };
+                    }
+                    case 3: {  // Specific timespan (one-shot range)
+                        var sy3 = a.startYear, sm3 = a.startMonth, sd3 = a.startDay;
+                        var ey  = a.endYear,   em  = a.endMonth,   ed  = a.endDay;
+                        if (sy3 == null || ey == null)
+                            return { kind: 'unknown', text: t('schedules.status.missingDates') };
+                        var start = new Date(sy3, sm3 - 1, sd3);
+                        var end   = new Date(ey,  em  - 1, ed, 23, 59, 59);
+                        if (now >= start && now <= end)
+                            return { kind: 'active', text: t('schedules.status.activeUntil', { date: fmtDate(end) }) };
+                        if (now < start)
+                            return { kind: 'pending', text: t('schedules.status.starts', { date: fmtDate(start) }) };
+                        return { kind: 'expired', text: t('schedules.status.ended', { date: fmtDate(end) }) };
+                    }
+                    case 4: {  // Yearly timespan (annual recurring range)
+                        var sm4 = a.startMonth, sd4 = a.startDay;
+                        var em2 = a.endMonth,   ed2 = a.endDay;
+                        if (sm4 == null || em2 == null)
+                            return { kind: 'unknown', text: t('schedules.status.missingMonthsDays') };
+                        var todayMD = M  * 100 + D;
+                        var startMD = sm4 * 100 + sd4;
+                        var endMD   = em2 * 100 + ed2;
+                        var active;
+                        if (startMD <= endMD) active = todayMD >= startMD && todayMD <= endMD;
+                        else                  active = todayMD >= startMD || todayMD <= endMD;
+                        if (active) {
+                            var endThisYear = new Date(Y, em2 - 1, ed2);
+                            if (startMD > endMD && todayMD >= startMD)
+                                endThisYear = new Date(Y + 1, em2 - 1, ed2);
+                            return { kind: 'active', text: t('schedules.status.activeUntil', { date: fmtDate(endThisYear) }) };
+                        }
+                        var nextStart = todayMD < startMD
+                                ? new Date(Y, sm4 - 1, sd4)
+                                : new Date(Y + 1, sm4 - 1, sd4);
+                        return { kind: 'inactive', text: t('schedules.status.next', { date: fmtDate(nextStart) }) };
+                    }
+                    case 5: {  // Weekday (recurring)
+                        var sm5 = a.startMonth;       // 13 = every month
+                        var wd  = a.weekDay;
+                        var wdim = a.weekDayInMonth;  // 0=every, 1-4=Nth, 5=last
+                        if (sm5 == null || wd == null || wdim == null)
+                            return { kind: 'unknown', text: t('schedules.status.missingWeekday') };
+                        var monthMatches = sm5 === 13 || sm5 === M;
+                        if (!monthMatches)
+                            return { kind: 'inactive', text: t('schedules.status.activeInMonth', { month: sm5 }) };
+                        if (loxWeekday !== wd)
+                            return { kind: 'inactive', text: t('schedules.status.nextDay', { day: WEEKDAY_NAME[wd] }) };
+                        if (wdim === 0)
+                            return { kind: 'active', text: t('schedules.status.activeEvery', { day: WEEKDAY_NAME[wd] }) };
+                        var t5 = nthWeekdayOfMonth(Y, M, wd, wdim);
+                        if (t5 && sameDay(t5, now))
+                            return { kind: 'active', text: t('schedules.status.activeNth', { occ: WEEKDAY_OCCURRENCE[wdim], day: WEEKDAY_NAME[wd] }) };
+                        return { kind: 'inactive', text: t('schedules.status.notThis', { occ: WEEKDAY_OCCURRENCE[wdim], day: WEEKDAY_NAME[wd] }) };
+                    }
+                    default:
+                        return { kind: 'unknown', text: t('schedules.status.unknownCalMode', { mode: mode }) };
+                }
+            }
+
+            function formatCalModeAttrs(calMode, a) {
+                switch (calMode) {
+                    case 0:
+                        // DD/MM (or MM/DD in English) via formatDayMonth.
+                        return formatDayMonth(a.startDay, a.startMonth);
+                    case 1:
+                        var off = a.easterOffset;
+                        if (off == null) return '?';
+                        // "Pâques +Nj" / "Easter +Nd" / "Ostern +NT" via i18n.
+                        return t('schedules.easter.label') + ' ' + (off >= 0 ? '+' : '') + off + t('schedules.easter.dayUnit');
+                    case 2:
+                        // DD/MM/YYYY (or MM/DD/YYYY in English).
+                        return formatDayMonthYear(a.startDay, a.startMonth, a.startYear);
+                    case 3:
+                        // DD/MM/YYYY → DD/MM/YYYY (or MM/DD/YYYY in English).
+                        return formatDayMonthYear(a.startDay, a.startMonth, a.startYear)
+                             + ' → '
+                             + formatDayMonthYear(a.endDay, a.endMonth, a.endYear);
+                    case 4:
+                        // V17 returns startMonth/startDay/endMonth/endDay (vs spec
+                        // which mentioned startYear/startMonth/endYear/endMonth —
+                        // doc/runtime divergence). DD/MM (or MM/DD in English).
+                        return formatDayMonth(a.startDay, a.startMonth)
+                             + ' → '
+                             + formatDayMonth(a.endDay, a.endMonth);
+                    case 5:
+                        // "<occ> <day> <of> <every-month|month N>" via i18n.
+                        var dayName = WEEKDAY_NAME[a.weekDay] || ('?' + a.weekDay);
+                        var occ     = WEEKDAY_OCCURRENCE[a.weekDayInMonth] || ('#' + a.weekDayInMonth);
+                        var month   = (a.startMonth === 13)
+                                ? t('schedules.builder.everyMonth').toLowerCase()
+                                : (t('schedules.calMode5.month') + ' ' + a.startMonth);
+                        return occ + ' ' + dayName + ' ' + t('schedules.calMode5.of') + ' ' + month;
+                    default:
+                        // Fallback: raw key=val.
+                        return Object.keys(a).map(function (k) { return k + '=' + a[k]; }).join(', ');
+                }
+            }
+
+            // AbortController scoped to the page-load fetch. Cancels previous
+            // in-flight refresh + aborts on pagehide. Prevents zombie fetches
+            // from continuing to the Miniserver when the operator navigates
+            // quickly between pages.
+            var pageAbortController = null;
+            function newPageSignal() {
+                if (pageAbortController) pageAbortController.abort();
+                pageAbortController = new AbortController();
+                return pageAbortController.signal;
+            }
+            function isAborted(err) {
+                return err && (err.name === 'AbortError' ||
+                               err.message === 'aborted' ||
+                               err.message === 'signal is aborted without reason');
+            }
+            window.addEventListener('pagehide', function () {
+                if (pageAbortController) pageAbortController.abort();
+            });
+
+            function refresh() {
+                var signal = newPageSignal();
+                // Status messages via t() i18n.
+                setStatus('', t('schedules.toast.loading'));
+                fetch('/api/v1/schedules', { signal: signal })
+                    .then(function (r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function (entries) {
+                        renderEntries(entries);
+                        setStatus('ok', t('schedules.toast.loaded', { count: entries.length }));
+                    })
+                    .catch(function (e) {
+                        if (isAborted(e)) return;
+                        tbody.innerHTML = '';
+                        countEl.textContent = '?';
+                        setStatus('err', '⚠ ' + e.message);
+                    });
+            }
+
+            // Resolution helper op-mode → "Name — ID". Fallback: if
+            // OP_MODES doesn't know the id (LoxAPP3 freshly reparsed without
+            // this mode, or modes not yet loaded), we display the ID alone
+            // rather than "undefined — 12".
+            function opModeLabel(id) {
+                if (id == null) return '?';
+                var name = OP_MODES && OP_MODES[String(id)];
+                return name ? (escapeHtml(name) + ' — ' + id) : String(id);
+            }
+
+            // Entries cache to allow the Edit modal to retrieve
+            // the full record (calMode + calModeAttrs) without re-fetch.
+            // Updated on every renderEntries.
+            var allEntries = [];
+
+            function renderEntries(entries) {
+                allEntries = entries || [];
+                tbody.innerHTML = '';
+                countEl.textContent = allEntries.length;
+                allEntries.forEach(function (e) {
+                    var tr = document.createElement('tr');
+                    // Compute "Currently" status. text is in the tooltip
+                    // + visible in the chip (short). bg/fg set inline
+                    // from STATUS_BADGE_SCHED to avoid multiplying
+                    // CSS classes per kind.
+                    var status = computeScheduleStatus(e);
+                    var palette = STATUS_BADGE_SCHED[status.kind] || STATUS_BADGE_SCHED.unknown;
+                    var chipHtml = '<span class="chip" style="background:' + palette.bg +
+                                   ';color:' + palette.fg +
+                                   ';" title="' + escapeHtml(status.text) + '">' +
+                                   escapeHtml(status.text) + '</span>';
+                    tr.innerHTML =
+                        '<td>' + escapeHtml(e.name) + '</td>' +
+                        '<td>' + opModeLabel(e.operatingMode) + '</td>' +
+                        '<td>' + e.calMode + ' — ' + (CAL_MODE_LABEL[e.calMode] || '?') + '</td>' +
+                        '<td>' + escapeHtml(formatCalModeAttrs(e.calMode, e.calModeAttrs || {})) + '</td>' +
+                        '<td>' + chipHtml + '</td>' +
+                        '<td class="actions">' +
+                        '  <button data-action="edit" data-uuid="' + escapeHtml(e.uuid) + '" data-name="' + escapeHtml(e.name) + '">' + t('common.edit') + '</button>' +
+                        '  <button class="btn-danger" data-action="delete" data-uuid="' + escapeHtml(e.uuid) + '" data-name="' + escapeHtml(e.name) + '">' + t('common.delete') + '</button>' +
+                        '</td>';
+                    tbody.appendChild(tr);
+                });
+                tbody.querySelectorAll('button[data-uuid]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var action = btn.getAttribute('data-action');
+                        var uuid   = btn.getAttribute('data-uuid');
+                        var name   = btn.getAttribute('data-name');
+                        if (action === 'edit') {
+                            openEditModal(uuid);
+                        } else if (action === 'delete') {
+                            // Confirm via t() i18n.
+                            if (!confirm(t('schedules.confirm.delete', { name: name }))) return;
+                            deleteEntry(uuid, name);
+                        }
+                    });
+                });
+            }
+
+            function deleteEntry(uuid, name) {
+                // Status via t() i18n.
+                setStatus('', t('schedules.toast.deleting', { name: name }));
+                fetch('/api/v1/schedules/' + encodeURIComponent(uuid), { method: 'DELETE' })
+                    .then(function (r) {
+                        if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || ('HTTP ' + r.status)); });
+                        setStatus('ok', t('schedules.toast.deleted', { name: name }));
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            form.addEventListener('submit', function (ev) {
+                ev.preventDefault();
+                var fd = new FormData(form);
+                var body = {
+                    name:          fd.get('name'),
+                    operatingMode: parseInt(fd.get('operatingMode'), 10),
+                    calMode:       parseInt(fd.get('calMode'),       10),
+                    calModeAttr:   fd.get('calModeAttr')
+                };
+                // Status via t() i18n.
+                setStatus('', t('schedules.toast.creating', { name: body.name }));
+                fetch('/api/v1/schedules', {
+                    method:  'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(body)
+                })
+                .then(function (r) {
+                    if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || ('HTTP ' + r.status)); });
+                    setStatus('ok', t('schedules.toast.created', { name: body.name }));
+                    form.reset();
+                    // Re-render the builder + re-serialize after form.reset()
+                    // so the hidden calAttr value isn't blank for the next
+                    // submit attempt.
+                    renderBuilder(CREATE_NS, parseInt(calMode.value, 10));
+                    refresh();
+                })
+                .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            });
+
+            // ============================================================
+            //  Edit modal
+            // ============================================================
+
+            var editModal       = document.getElementById('edit-modal');
+            var editForm        = document.getElementById('edit-entry-form');
+            var editUuid        = document.getElementById('edit-uuid');
+            var editName        = document.getElementById('edit-name');
+            var editOpMode      = document.getElementById('edit-op-mode');
+            var editCalMode     = document.getElementById('edit-cal-mode');
+            var editAttrBuilder = document.getElementById('edit-cal-attr-builder');
+            var editAttr        = document.getElementById('edit-cal-attr');
+            var editAttrPreview = document.getElementById('edit-cal-attr-preview');
+            var editStatusBar   = document.getElementById('edit-status-bar');
+            var editCancel      = document.getElementById('edit-cancel');
+            var editSave        = document.getElementById('edit-save');
+
+            var EDIT_NS = {
+                prefix:        'edit-',
+                builder:       editAttrBuilder,
+                attrInput:     editAttr,
+                preview:       editAttrPreview,
+                calModeSelect: editCalMode
+            };
+
+            // Pop the edit op-mode select with the same OP_MODES map populated
+            // for the create form. Redone on every modal open in case
+            // LoxAPP3 was just reloaded.
+            function populateEditOpMode() {
+                editOpMode.innerHTML = '';
+                Object.keys(OP_MODES || {}).sort(function (a, b) {
+                    return parseInt(a, 10) - parseInt(b, 10);
+                }).forEach(function (id) {
+                    var opt = document.createElement('option');
+                    opt.value = id;
+                    opt.textContent = OP_MODES[id] + ' — ' + id;
+                    editOpMode.appendChild(opt);
+                });
+            }
+
+            function setEditStatus(kind, text) {
+                editStatusBar.className = kind;
+                editStatusBar.textContent = text;
+                editStatusBar.style.color =
+                    kind === 'ok'  ? 'var(--accent-up)'   :
+                    kind === 'err' ? 'var(--accent-down)' : 'var(--fg-dim)';
+            }
+
+            function openEditModal(uuid) {
+                var entry = allEntries.find(function (e) { return e.uuid === uuid; });
+                if (!entry) {
+                    // Status via t() i18n.
+                    setStatus('err', t('schedules.toast.notInCache', { uuid: uuid }));
+                    return;
+                }
+                populateEditOpMode();
+                editUuid.value    = entry.uuid;
+                editName.value    = entry.name || '';
+                editOpMode.value  = String(entry.operatingMode);
+                editCalMode.value = String(entry.calMode);
+                renderBuilder(EDIT_NS, entry.calMode);
+                prefillBuilder(EDIT_NS, entry.calMode, entry.calModeAttrs || {});
+                setEditStatus('', t('schedules.toast.editing', { name: entry.name, uuid: uuid.substring(0, 8) }));
+                editModal.classList.add('open');
+            }
+
+            function closeEditModal() {
+                editModal.classList.remove('open');
+                editForm.reset();
+                editStatusBar.textContent = '';
+                editAttrBuilder.innerHTML = '';
+            }
+
+            editCalMode.addEventListener('change', function () {
+                // calMode change → re-render builder. No pre-fill
+                // (the operator changed their mind, we restart from defaults).
+                renderBuilder(EDIT_NS, parseInt(editCalMode.value, 10));
+            });
+
+            editCancel.addEventListener('click', closeEditModal);
+            // Click outside the modal-card → close (UX standard).
+            editModal.addEventListener('click', function (ev) {
+                if (ev.target === editModal) closeEditModal();
+            });
+
+            editSave.addEventListener('click', function () {
+                var uuid = editUuid.value;
+                // Status via t() i18n.
+                if (!uuid) { setEditStatus('err', t('schedules.toast.missingUuid')); return; }
+                var name = editName.value.trim();
+                if (!name) { setEditStatus('err', t('schedules.toast.missingName')); return; }
+                var body = {
+                    name:          name,
+                    operatingMode: parseInt(editOpMode.value,  10),
+                    calMode:       parseInt(editCalMode.value, 10),
+                    calModeAttr:   editAttr.value
+                };
+                setEditStatus('', t('schedules.toast.saving', { name: name }));
+                fetch('/api/v1/schedules/' + encodeURIComponent(uuid), {
+                    method:  'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body:    JSON.stringify(body)
+                })
+                .then(function (r) {
+                    if (!r.ok) return r.json().then(function (j) {
+                        throw new Error(j.message || ('HTTP ' + r.status));
+                    });
+                    setEditStatus('ok', t('schedules.toast.saved'));
+                    setStatus('ok', t('schedules.toast.updated', { name: name }));
+                    closeEditModal();
+                    refresh();
+                })
+                .catch(function (e) { setEditStatus('err', '⚠ ' + e.message); });
+            });
+
+            // ============================================================
+            //  Refresh controls (mirror /users)
+            // ============================================================
+
+            // 30s tick — same cadence as /users. /schedules is calmer
+            // (no auto-changing state — a schedule stays fixed unless
+            // another operator touches it via Loxone Config) but
+            // keep 30s for cross-pages consistency.
+            var AUTO_REFRESH_INTERVAL_MS = 30000;
+            var autoRefreshIntervalId    = null;
+            var refreshNowBtn      = document.getElementById('refresh-now');
+            var autoRefreshToggle  = document.getElementById('auto-refresh-toggle');
+
+            function startAutoRefresh() {
+                stopAutoRefresh();
+                autoRefreshIntervalId = setInterval(refresh, AUTO_REFRESH_INTERVAL_MS);
+            }
+
+            function stopAutoRefresh() {
+                if (autoRefreshIntervalId != null) {
+                    clearInterval(autoRefreshIntervalId);
+                    autoRefreshIntervalId = null;
+                }
+            }
+
+            refreshNowBtn.addEventListener('click', function () { refresh(); });
+            autoRefreshToggle.addEventListener('change', function (e) {
+                if (e.target.checked) startAutoRefresh();
+                else                  stopAutoRefresh();
+            });
+            window.addEventListener('pagehide', stopAutoRefresh);
+
+            // Initial load.
+            refresh();
+            if (autoRefreshToggle.checked) startAutoRefresh();
+        })();
+    </script>
+</body>
+</html>

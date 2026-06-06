@@ -1,0 +1,81 @@
+# ============================================================================
+# DEV profile — local development on the operator's workstation.
+#
+# Activated implicitly by `mvn quarkus:dev` and explicitly by
+# `-Dquarkus.profile=dev`. Loaded ON TOP of application.yml; only the
+# keys below override.
+#
+# Properties grouped by prefix: quarkus.* → loxone.*
+# (alphabetical at the prefix level, logical within each group).
+# ============================================================================
+
+quarkus:
+  http:
+    # plain HTTP for dev iteration; no cert juggling locally.
+    # The base config does not declare any TLS keys, so leaving them out here
+    # means HTTPS is simply not configured.
+    insecure-requests: enabled
+
+  # verbose logging while iterating.
+  # The admin command client runs at TRACE so the operator sees every
+  # wire-level admin exchange (getkey / autht / user + group mutations).
+  # TRACE needs BOTH a runtime `level: TRACE` AND a build-time
+  # `min-level: TRACE`: min-level is the floor below which log statements
+  # are compiled out, so without it Quarkus promotes the runtime level back
+  # to DEBUG and warns. The binary-states decoder (miniserver.message) stays
+  # at DEBUG — one event-table line per ~1 s on a Gen2 is plenty; TRACE
+  # there would be overkill.
+  # DEBUG on DefaultAsyncObserverExceptionHandler keeps future bean-creation
+  # failures surfacing their full stack trace immediately (we hit this
+  # 2026-05-19 with the @ConfigMapping InjectionPoint loss after too many
+  # dev hot-reloads).
+  log:
+    level: INFO
+    category:
+      "com.quaddan":
+        level: DEBUG
+      "com.quaddan.iot.loxmq.miniserver.message":
+        level: DEBUG
+        min-level: DEBUG
+      "io.quarkus.arc.impl.DefaultAsyncObserverExceptionHandler":
+        level: DEBUG
+      "com.quaddan.iot.loxmq.miniserver.admin":
+        level: TRACE
+        min-level: TRACE
+      "com.quaddan.iot.loxmq.miniserver.session.SessionOrchestrator":
+        level: DEBUG
+      "com.quaddan.iot.loxmq.transport.publish.CommandResponsePublisher":
+        level: DEBUG
+
+  swagger-ui:
+    # always exposed in dev.
+    always-include: true
+
+loxone:
+  miniserver:
+    # local LAN miniserver (Cocoon Gen2 dev token).
+    connection:
+      host: ${MINISERVER_HOST:miniserver.example.com}
+      port: ${MINISERVER_PORT:80}
+      secure: false
+    app:
+      # Placeholder per-instance UUID — REPLACE with your own (see the full
+      # app.id explanation in application.yml). It is the MQTT topic root,
+      # MQTT client-id, JWT client-UUID and on-disk cache dir for this profile.
+      id: 7b66ce4a-c00a-453c-8da3-314e971db14d
+      info: loxmq DEV
+
+  transport:
+    # local broker. Plain WebSocket on 8083, no TLS on LAN.
+    # Credentials are anonymous-ish dev defaults — override via env if you point
+    # at a real broker.
+    connection:
+      protocol: ws
+      secure: false
+      host: ${MQTT_BROKER_HOST:broker.example.com}
+      port: ${MQTT_BROKER_PORT:8083}
+      path: /mqtt
+    security:
+      credentials:
+        user: ${LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER:CHANGE_ME}
+        password: ${LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD:CHANGE_ME}

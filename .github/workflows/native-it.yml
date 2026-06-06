@@ -1,0 +1,38 @@
+name: Native IT
+
+# Native build is expensive (~10 min) so it runs on a weekly cron rather
+# than on every push. Operators can trigger it manually before a release.
+# Docker is provided by ubuntu-latest runners (the Mandrel container
+# pulls automatically).
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'      # every Monday at 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-it-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-it:
+    name: Native binary + integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Native build + IT against the native binary
+        run: mvn -B -ntp verify -Pnative,integration

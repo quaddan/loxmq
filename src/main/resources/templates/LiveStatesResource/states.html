@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="states.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>loxmq — States live</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE. -->
+    <script src="/js/i18n.js"></script>
+    <style>
+        :root {
+            --bg: #0e1116;
+            --bg-panel: #161b22;
+            --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9;
+            --fg-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent-warn: #d29922;
+            --accent-down: #f85149;
+            --accent-up: #3fb950;
+            --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            /* Native UI in light variant. */
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.5;
+        }
+        header {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        /* Logo + page suffix. Same height as dashboard for visual
+           continuity when navigating between pages. */
+        header h1 img.logo { height: 96px; width: auto; display: block; }
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        header nav.tabs {
+            display: flex;
+            gap: 0.5rem;
+        }
+        header nav.tabs a {
+            color: var(--fg-dim);
+            text-decoration: none;
+            padding: 0.4rem 1rem;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        header nav.tabs a:hover {
+            color: var(--fg);
+            background: var(--bg-panel-hover);
+        }
+        header nav.tabs a.active {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+        /* i18n language combobox. */
+        header .lang-switcher {
+            /* Globe icon (inline SVG, fg-dim stroke) pinned to the left ;
+               padding-left clears room for it. Native select arrow stays
+               on the right. */
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 0.55rem center;
+            background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.35rem 0.5rem 0.35rem 1.9rem; font-family: inherit;
+            font-size: 0.8rem; cursor: pointer;
+        }
+        header .lang-switcher:hover { border-color: var(--accent); }
+        main {
+            padding: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--fg-dim);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        .toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        .filters label {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--fg-dim);
+        }
+        .filters select {
+            background: var(--bg);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.4rem 0.6rem;
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            min-width: 12rem;
+        }
+        .counter {
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            color: var(--fg-dim);
+            min-width: 12rem;
+            text-align: right;
+        }
+        button {
+            background: var(--bg-panel-hover);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button.btn-clear { background: #b62324; color: #fff; border-color: #b62324; }
+        button.btn-clear:hover { background: #cf2e2e; border-color: #cf2e2e; color: #fff; }
+        table.states {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            /* Fixed layout: column widths come from the <colgroup> below,
+               NOT from cell content. A long Text event (e.g. the Journal
+               dump) therefore wraps inside the value column instead of
+               stretching it — so the surrounding Value rows keep their
+               compact, right-aligned number layout. */
+            table-layout: fixed;
+        }
+        /* Deterministic column widths (paired with the <colgroup> in the
+           table markup). The value column is sized to hold the widest number
+           on one line; Text events wrap within it (and span the unused
+           sparkline column via colspan). col-name has no width → it absorbs
+           the remaining space. */
+        table.states col.col-time  { width: 7.5rem; }
+        table.states col.col-type  { width: 5rem; }
+        table.states col.col-room  { width: 9rem; }
+        table.states col.col-cat   { width: 9rem; }
+        table.states col.col-value { width: 20rem; }
+        table.states col.col-spark { width: 96px; }
+        table.states th, table.states td {
+            padding: 0.4rem 0.6rem;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+            vertical-align: top;
+            /* Break long unbroken tokens so a cell can never overflow its
+               fixed column width. */
+            overflow-wrap: anywhere;
+        }
+        table.states th {
+            color: var(--fg-dim);
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.05em;
+            border-bottom-width: 2px;
+            position: sticky;
+            top: 0;
+            background: var(--bg-panel);
+        }
+        table.states td.num { text-align: right; }
+        /* Text / DayTimer / Weather events: left-aligned, wrapping value cell
+           (spans value + sparkline columns). Avoids the right-alignment meant
+           for numbers and keeps long text readable. */
+        table.states td.val-text { text-align: left; white-space: normal; }
+        table.states tr.hidden-by-filter { display: none; }
+        table.states tr.is-unknown td { color: var(--accent-warn); }
+        table.states tr:hover { background: var(--bg-panel-hover); }
+        /* Sparkline column. Fixed width so that the presence/absence
+           of a canvas doesn't make the other columns "dance". Reduced padding
+           so the cell hugs the canvas size. */
+        table.states th.spark, table.states td.spark {
+            width: 96px;
+            padding: 0.2rem 0.4rem;
+        }
+        table.states canvas.spark {
+            display: block;
+            width: 88px;
+            height: 18px;
+            /* No border nor bg — the canvas is rendered in accent colour
+               on the panel background. Keeps the table breathable. */
+        }
+        table.states td.spark-meta {
+            font-size: 0.65rem;
+            color: var(--fg-dim);
+            font-family: var(--mono);
+            text-align: right;
+        }
+        footer {
+            padding: 1rem 2rem;
+            color: var(--fg-dim);
+            font-size: 0.8rem;
+            text-align: center;
+            border-top: 1px solid var(--border);
+        }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/" style="line-height:0;"><img class="logo" src="/images/loxmq-logo-compact.svg" alt=""></a>
+            <span class="vh">loxmq</span>
+        </h1>
+        <nav class="tabs">
+            <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states" class="active">States live</a>
+            <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
+            <a href="/users"     data-i18n="nav.users">Users</a>
+            <a href="/logs"      data-i18n="nav.logs">Logs</a>
+        </nav>
+        <!-- Language combobox. -->
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <section class="panel">
+            <h2 data-i18n="states.filter.title">Filtres</h2>
+            <div class="toolbar">
+                <div class="filters">
+                    <label><span data-i18n="states.table.type">Type</span>
+                        <select id="filter-kind">
+                            <option value="" data-i18n="states.filter.allMasc">(all)</option>
+                            <option value="value" data-i18n="states.filter.kind.value">value</option>
+                            <option value="text" data-i18n="states.filter.kind.text">text</option>
+                        </select>
+                    </label>
+                    <label><span data-i18n="states.table.room">Room</span>
+                        <select id="filter-room"><option value="" data-i18n="states.filter.allFem">(all)</option></select>
+                    </label>
+                    <label><span data-i18n="states.table.cat">Category</span>
+                        <select id="filter-cat"><option value="" data-i18n="states.filter.allFem">(all)</option></select>
+                    </label>
+                    <label><span data-i18n="states.table.name">Name</span>
+                        <select id="filter-name"><option value="" data-i18n="states.filter.allMasc">(all)</option></select>
+                    </label>
+                </div>
+            </div>
+            <!-- Second toolbar row: UNKNOWN checkbox on the left,
+                 counter + Clear right-aligned. Horizontal layout on the
+                 same line.
+                 - Lets the eye scan "filters / unknown / counter / Clear"
+                   in natural reading order.
+                 - The Clear button stays accessible at the same visual spot. -->
+            <div style="display: flex; justify-content: space-between; align-items: center;
+                        gap: 1rem; margin-top: 0.75rem; flex-wrap: wrap;">
+                <!-- Left cluster: the two display toggles side by side
+                     (UNKNOWN filter first, then the Live/pause toggle). -->
+                <div style="display:inline-flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+                    <!-- Checkbox to hide rows whose control name is
+                         "UNKNOWN" (controls without a LoxAPP3 match, typically structure
+                         file not loaded or control deleted). State persisted
+                         ?hide-unknown=1. -->
+                    <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;
+                                  color:var(--fg-dim); font-size:0.85rem;">
+                        <!-- `checked` on the HTML side to avoid the "unchecked →
+                             JS init → checked" flash during the ~5ms of parse + script
+                             execution. JS can uncheck it if the URL carries
+                             `hide-unknown=0`. -->
+                        <input type="checkbox" id="filter-hide-unknown" checked>
+                        <span><span data-i18n="states.filter.hideUnknown">Hide</span> <code style="font-family:var(--mono);">UNKNOWN</code></span>
+                    </label>
+                    <!-- Live / pause toggle. Checked = live: incoming state
+                         events render as they arrive. Unchecked = paused: the
+                         table freezes — events are dropped (NOT buffered), so
+                         resuming shows only what arrives *after* un-pausing,
+                         never a backfill of what was missed. The SSE stream
+                         stays open the whole time; we just ignore messages
+                         while paused (cf. liveStream.onmessage). -->
+                    <label style="display:inline-flex; align-items:center; gap:0.4rem; cursor:pointer;
+                                  color:var(--fg-dim); font-size:0.85rem;">
+                        <input type="checkbox" id="live-toggle" checked
+                               data-i18n-attr="title:states.filter.liveTitle">
+                        <span data-i18n="states.filter.live">Live</span>
+                    </label>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div class="counter" id="counter">…</div>
+                    <button type="button" class="btn-clear" id="btn-clear"
+                            data-i18n="states.filter.clearBtn"
+                            data-i18n-attr="title:states.filter.clearTitle"
+                            title="Clear the table (incoming events keep arriving)">Clear</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2 data-i18n="states.events.title">Events</h2>
+            <table class="states" id="states-table">
+                <colgroup>
+                    <col class="col-time">
+                    <col class="col-type">
+                    <col class="col-room">
+                    <col class="col-cat">
+                    <col class="col-name">
+                    <col class="col-value">
+                    <col class="col-spark">
+                </colgroup>
+                <thead>
+                    <tr>
+                        <th data-i18n="states.table.time">Time</th>
+                        <th data-i18n="states.table.type">Type</th>
+                        <th data-i18n="states.table.room">Room</th>
+                        <th data-i18n="states.table.cat">Category</th>
+                        <th data-i18n="states.table.name">Name</th>
+                        <th class="num" data-i18n="states.table.value">Value</th>
+                        <th class="spark"
+                            data-i18n="states.table.sparkline"
+                            data-i18n-attr="title:states.table.sparklineTitle"
+                            title="Trend of the latest points for this UUID (~30 latest events)">Trend</th>
+                    </tr>
+                </thead>
+                <tbody><!-- rows inserted at the top by handleLiveState() --></tbody>
+            </table>
+        </section>
+    </main>
+
+    <footer>
+        <a href="/" data-i18n="common.backToDashboard">← Dashboard</a> ·
+        <a href="/api/v1/state">/api/v1/state</a> ·
+        <a href="/q/health">/q/health</a>
+    </footer>
+
+    <!--
+      Topology pre-rendered server-side via Qute. The {topologyJson.raw}
+      injects the JSON without HTML escaping (the `</` → `<\/` substitution
+      has already been done on the Java side so a name containing `</script>`
+      doesn't break the browser context).
+
+      Schema: { "rooms": ["Living Room", ...], "categories": ["Temperature", ...],
+                 "controls": [{"controlName":"Living Room Sensor","roomName":"Living Room","catName":"Temperature"}, ...] }
+    -->
+    <script>
+        window.TOPOLOGY = {topologyJson.raw};
+    </script>
+
+    <script>
+        (function () {
+            var T = window.TOPOLOGY || { rooms: [], categories: [], controls: [] };
+
+            var tbody       = document.querySelector('#states-table tbody');
+            var counter     = document.getElementById('counter');
+            var btnClear    = document.getElementById('btn-clear');
+            var filterKind  = document.getElementById('filter-kind');
+            var filterRoom  = document.getElementById('filter-room');
+            var filterCat   = document.getElementById('filter-cat');
+            var filterName  = document.getElementById('filter-name');
+            // UNKNOWN checkbox, sibling of the 4 existing selects.
+            var filterHideUnknown = document.getElementById('filter-hide-unknown');
+            // Live / pause toggle. Checked = render incoming events; unchecked
+            // = drop them (see liveStream.onmessage). Read live on each event,
+            // so no change listener is needed — flipping it takes effect on the
+            // next message. Not persisted to the URL: pause is a transient
+            // viewing state, not a filter.
+            var liveToggle = document.getElementById('live-toggle');
+
+            // -----------------------------------------------------------------
+            //  Pre-filled dropdowns + room → cats → names cascade.
+            //  Re-evaluated on every filter change:
+            //  - filter-cat options = categories that have at least one control
+            //    in the selected room (or ALL if no room).
+            //  - filter-name options = names of controls that match (selected
+            //    room OR all) AND (selected category OR all).
+            // -----------------------------------------------------------------
+            function refillSelect(sel, values, placeholder) {
+                var current = sel.value;
+                sel.innerHTML = '';
+                var opt0 = document.createElement('option');
+                opt0.value = ''; opt0.textContent = placeholder;
+                sel.appendChild(opt0);
+                values.forEach(function (v) {
+                    var o = document.createElement('option');
+                    o.value = v; o.textContent = v;
+                    sel.appendChild(o);
+                });
+                // Restore the selection if the value is still present.
+                sel.value = values.indexOf(current) >= 0 ? current : '';
+            }
+
+            function recomputeDropdowns() {
+                var pickedRoom = filterRoom.value;
+                var pickedCat  = filterCat.value;
+
+                // Visible cats: intersection with the controls of the selected
+                // room. If no room → all LoxAPP3 cats.
+                var catsSet = new Set();
+                T.controls.forEach(function (c) {
+                    if (!pickedRoom || c.roomName === pickedRoom) catsSet.add(c.catName);
+                });
+                var catsList = pickedRoom
+                    ? Array.from(catsSet).sort(localeSort)
+                    : T.categories.slice();    // sort already done server-side
+                // Placeholders via t() i18n FR/EN/DE.
+                refillSelect(filterCat, catsList, t('states.filter.allFem'));
+
+                // Visible names: intersection with the selected (room, cat).
+                var namesSet = new Set();
+                T.controls.forEach(function (c) {
+                    if (pickedRoom && c.roomName !== pickedRoom) return;
+                    if (filterCat.value && c.catName !== filterCat.value) return;
+                    namesSet.add(c.controlName);
+                });
+                refillSelect(filterName, Array.from(namesSet).sort(localeSort), t('states.filter.allMasc'));
+            }
+
+            function localeSort(a, b) {
+                return a.localeCompare(b, 'fr', { sensitivity: 'base' });
+            }
+
+            // -----------------------------------------------------------------
+            //  Filter persistence in the URL.
+            //  - At load: we read ?kind=…&room=…&cat=…&name=… and pre-position
+            //    the selects BEFORE populating the dropdowns. refillSelect()
+            //    preserves the current `sel.value` if the value stays in the new
+            //    list — so the "set value → populate" order works for all 4.
+            //  - On each change: we rewrite the URL via history.replaceState
+            //    so that F5 / link sharing restores the same view.
+            //  - We serialize ONLY the active filters (not the '') to keep
+            //    the URL clean.
+            // -----------------------------------------------------------------
+            function readFiltersFromUrl() {
+                var params = new URLSearchParams(window.location.search);
+                // UNKNOWN filter is ON by default. The URL param is
+                // serialized only when the operator overrides it to OFF
+                // (`hide-unknown=0`). Param absent OR `=1` → checked.
+                // Keeps the URL clean in the default mode (no query string for
+                // an unmodified state) while still allowing link sharing
+                // "show me UNKNOWN too" via `?hide-unknown=0`.
+                return {
+                    kind: params.get('kind') || '',
+                    room: params.get('room') || '',
+                    cat:  params.get('cat')  || '',
+                    name: params.get('name') || '',
+                    hideUnknown: params.get('hide-unknown') !== '0'
+                };
+            }
+
+            function writeFiltersToUrl() {
+                var params = new URLSearchParams();
+                if (filterKind.value) params.set('kind', filterKind.value);
+                if (filterRoom.value) params.set('room', filterRoom.value);
+                if (filterCat.value)  params.set('cat',  filterCat.value);
+                if (filterName.value) params.set('name', filterName.value);
+                // Serialize UNKNOWN filter only if overridden
+                // (operator unchecked → hide-unknown=0). Default (checked) stays
+                // implicit, URL without hide-unknown.
+                if (!filterHideUnknown.checked) params.set('hide-unknown', '0');
+                var q = params.toString();
+                var url = window.location.pathname + (q ? '?' + q : '');
+                // replaceState (not pushState) — a filter change is not
+                // a "navigation" we want in the back history.
+                window.history.replaceState({}, '', url);
+            }
+
+            // Pre-set the values from the URL BEFORE the initial populate of
+            // the dropdowns. refillSelect() / recomputeDropdowns() will preserve
+            // each current sel.value as long as it remains in the computed list.
+            // If a URL value is no longer valid (room renamed in the
+            // LoxAPP3 in the meantime), refillSelect silently resets it to ''.
+            var initialFilters = readFiltersFromUrl();
+            filterKind.value = initialFilters.kind;
+            filterRoom.value = initialFilters.room;
+            filterCat.value  = initialFilters.cat;
+            filterName.value = initialFilters.name;
+            // Restore UNKNOWN checkbox state from URL.
+            filterHideUnknown.checked = initialFilters.hideUnknown;
+
+            // Rooms = fixed LoxAPP3 list (no dependent cascade).
+            // Placeholder via t() i18n.
+            refillSelect(filterRoom, T.rooms.slice(), t('states.filter.allFem'));
+            recomputeDropdowns();
+
+            // Wrapper handler — writes the URL AND applies the filter to the
+            // existing rows. Called instead of applyFilters() directly by the
+            // 4 change listeners.
+            function onFilterChanged() {
+                writeFiltersToUrl();
+                applyFilters();
+            }
+
+            filterRoom.addEventListener('change', function () {
+                // When the room changes, the cats become obsolete.
+                filterCat.value = '';
+                filterName.value = '';
+                recomputeDropdowns();
+                onFilterChanged();
+            });
+            filterCat.addEventListener('change', function () {
+                // Cat change → recompute only the names.
+                filterName.value = '';
+                recomputeDropdowns();
+                onFilterChanged();
+            });
+            filterKind.addEventListener('change', onFilterChanged);
+            filterName.addEventListener('change', onFilterChanged);
+            // UNKNOWN filter doesn't modify the other dropdowns
+            // (no recompute); just re-applies the filter on the rows
+            // already in the DOM + writes the URL.
+            filterHideUnknown.addEventListener('change', onFilterChanged);
+
+            // Counters: we also keep a total "received events" separate from the DOM,
+            // because we SKIP non-matching events instead of inserting them
+            // hidden — see handleLiveState().
+            var totalReceived = 0;
+
+            // -----------------------------------------------------------------
+            //  Sparklines per UUID.
+            //
+            //  Global Map<uuid, number[]> buffer, capped at SPARK_MAX_POINTS.
+            //  Each new Value row with a numeric value pushes a point
+            //  and draws a canvas in the "Tendance" cell of ITS row.
+            //  Previous rows are NOT re-rendered → they keep the
+            //  sparkline frozen at the moment of their insertion. Acceptable
+            //  semantics: "at T0 the trend looked like this; at T1 like that".
+            //
+            //  No localStorage → F5 = empty buffers. Steady-state ~5
+            //  events/sec → a 30-pt buffer fills in a few s.
+            // -----------------------------------------------------------------
+            var SPARK_BUFFER     = new Map();
+            var SPARK_MAX_POINTS = 30;
+            var SPARK_DPR        = window.devicePixelRatio || 1;
+            var SPARK_CSS_W      = 88;
+            var SPARK_CSS_H      = 18;
+
+            function pushSparkPoint(uuid, value) {
+                var arr = SPARK_BUFFER.get(uuid);
+                if (!arr) { arr = []; SPARK_BUFFER.set(uuid, arr); }
+                arr.push(value);
+                if (arr.length > SPARK_MAX_POINTS) arr.shift();
+                return arr;
+            }
+
+            // Returns a rendered <canvas>, or null if not enough points
+            // (a single point = no line possible). Backing buffer scaled
+            // to DPR to stay crisp on Retina screens; CSS stays fixed.
+            function makeSparkCanvas(points) {
+                if (points.length < 2) return null;
+                var canvas = document.createElement('canvas');
+                canvas.className   = 'spark';
+                canvas.width       = SPARK_CSS_W * SPARK_DPR;
+                canvas.height      = SPARK_CSS_H * SPARK_DPR;
+                canvas.style.width = SPARK_CSS_W + 'px';
+                canvas.style.height= SPARK_CSS_H + 'px';
+                var ctx = canvas.getContext('2d');
+                ctx.scale(SPARK_DPR, SPARK_DPR);
+
+                var min = Infinity, max = -Infinity;
+                for (var i = 0; i < points.length; i++) {
+                    if (points[i] < min) min = points[i];
+                    if (points[i] > max) max = points[i];
+                }
+                var range = max - min;
+                var flat = (range === 0);
+                if (flat) range = 1;    // avoid division by zero
+
+                ctx.strokeStyle = '#58a6ff';    // = var(--accent)
+                ctx.lineWidth   = 1;
+                ctx.lineJoin    = 'round';
+                ctx.beginPath();
+                for (var j = 0; j < points.length; j++) {
+                    var x = (j / (points.length - 1)) * (SPARK_CSS_W - 2) + 1;
+                    var y = flat
+                          ? SPARK_CSS_H / 2
+                          : SPARK_CSS_H - 1 - ((points[j] - min) / range) * (SPARK_CSS_H - 2);
+                    if (j === 0) ctx.moveTo(x, y);
+                    else         ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                return canvas;
+            }
+
+            // p.value on the server side is typically a Number (Value-State
+            // decoded → double), but SSE serializes everything to JSON. We
+            // also accept parseable strings (robustness, no
+            // dependency on the exact server-side format).
+            function parseNumeric(p) {
+                if (typeof p.value === 'number' && isFinite(p.value)) return p.value;
+                if (typeof p.value === 'string') {
+                    var n = parseFloat(p.value);
+                    if (isFinite(n)) return n;
+                }
+                return null;
+            }
+
+            // -----------------------------------------------------------------
+            //  matchesFilter — true if the event/row passes the 4 dropdowns.
+            //  Data source: p (SSE payload) OR row.dataset (re-eval
+            //  after a filter change). Same contract for both callsites.
+            // -----------------------------------------------------------------
+            function matchesFilter(kind, room, cat, name) {
+                var fk = filterKind.value;
+                var fr = filterRoom.value;
+                var fc = filterCat.value;
+                var fn = filterName.value;
+                // UNKNOWN guard. Case-insensitive on the name to
+                // cover any variants (Unknown / unknown).
+                if (filterHideUnknown.checked &&
+                    (name || '').trim().toUpperCase() === 'UNKNOWN') return false;
+                return (!fk || kind === fk) &&
+                       (!fr || room === fr) &&
+                       (!fc || cat  === fc) &&
+                       (!fn || name === fn);
+            }
+
+            // -----------------------------------------------------------------
+            //  Re-evaluates the rows already in the DOM against the current filter
+            //  (toggle hidden-by-filter). Called on a dropdown change.
+            //  Non-matching rows stay in the DOM (display:none);
+            //  allowing a filter removal to re-show them.
+            // -----------------------------------------------------------------
+            function applyFilters() {
+                var visible = 0;
+                var total = tbody.rows.length;
+                for (var i = 0; i < total; i++) {
+                    var row = tbody.rows[i];
+                    var match = matchesFilter(row.dataset.kind, row.dataset.room,
+                                              row.dataset.cat, row.dataset.name);
+                    row.classList.toggle('hidden-by-filter', !match);
+                    if (match) visible++;
+                }
+                updateCounter(visible, total);
+            }
+
+            // Counter via t() i18n (FR/EN/DE). The last call is memoized
+            // so we can re-render on language change (the 'i18n:changed'
+            // event below).
+            var lastCounterVisible = 0;
+            var lastCounterTotal   = 0;
+            function updateCounter(visible, totalInTable) {
+                lastCounterVisible = visible;
+                lastCounterTotal   = totalInTable;
+                counter.textContent = t('states.counter.text', {
+                    visible:        visible,
+                    totalInTable:   totalInTable,
+                    totalReceived:  totalReceived
+                });
+            }
+            // Re-render the counter on every language change.
+            // Also re-refill the filter dropdowns placeholders
+            // (filter-room, filter-cat, filter-name) because refillSelect()
+            // overwrites them at runtime, so applyI18n() which only touches the
+            // static HTML DOM isn't enough. We preserve the current selection
+            // via refillSelect's internal logic.
+            window.addEventListener('i18n:changed', function () {
+                updateCounter(lastCounterVisible, lastCounterTotal);
+                if (typeof T !== 'undefined' && T && T.rooms) {
+                    refillSelect(filterRoom, T.rooms.slice(), t('states.filter.allFem'));
+                    recomputeDropdowns();
+                }
+            });
+
+            // -----------------------------------------------------------------
+            //  Clear button: empties the table + resets the "received" counter.
+            // -----------------------------------------------------------------
+            btnClear.addEventListener('click', function () {
+                tbody.innerHTML = '';
+                totalReceived = 0;
+                // Also purge the sparkline buffer. Otherwise the 1st post-clear event
+                // would keep drawing a canvas with the old points
+                // (the operator expects a total reset).
+                SPARK_BUFFER.clear();
+                updateCounter(0, 0);
+            });
+
+            // -----------------------------------------------------------------
+            //  Appending a row to the table:
+            //   - If a filter is active AND the event doesn't match → SKIP
+            //     (no DOM insertion, we just increment `totalReceived`).
+            //   - If match → insertion at the head of tbody.
+            //
+            //  Why skip rather than `display:none`:
+            //   - Keeping a 10k+ rows table slows down the browser → the SSE
+            //     subscriber consumes slower → the server-side
+            //     BroadcastProcessor drops events (onOverflow.drop).
+            //   - With a filter active, the non-matching rows don't interest
+            //     the operator (otherwise they wouldn't be filtering).
+            //  Trade-off: removing a filter doesn't reveal the historical
+            //  non-matching rows (= they were never inserted into the DOM).
+            //  Rows already in the DOM with a previous filter stay
+            //  re-evaluated by applyFilters(); only FUTURE
+            //  non-matching rows are skipped.
+            // -----------------------------------------------------------------
+            function escapeHtml(s) {
+                return String(s)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            function handleLiveState(p) {
+                totalReceived++;
+
+                if (!matchesFilter(p.kind || '', p.room || '', p.cat || '', p.name || '')) {
+                    // Skip — DOM light, browser responsive, no drops on the server.
+                    updateCounter(currentVisibleCount(), tbody.rows.length);
+                    return;
+                }
+
+                var d = new Date(p.ts);
+                var hh = String(d.getHours()).padStart(2, '0');
+                var mm = String(d.getMinutes()).padStart(2, '0');
+                var ss = String(d.getSeconds()).padStart(2, '0');
+                var ms = String(d.getMilliseconds()).padStart(3, '0');
+                var timeStr = hh + ':' + mm + ':' + ss + '.' + ms;
+
+                var row = document.createElement('tr');
+                row.dataset.kind = p.kind || '';
+                row.dataset.room = p.room || '';
+                row.dataset.cat  = p.cat  || '';
+                row.dataset.name = p.name || '';
+                if (p.name === 'UNKNOWN') row.classList.add('is-unknown');
+
+                // Kind cell — display the i18n label, but also tag the cell
+                // with data-i18n so the live language switcher swaps it on
+                // the fly (same key set as the filter dropdown, lines 242-243).
+                var kindKey  = p.kind === 'value' ? 'states.filter.kind.value'
+                             : p.kind === 'text'  ? 'states.filter.kind.text'
+                             : null;
+                var kindCell = kindKey
+                        ? '<td data-i18n="' + kindKey + '">' + escapeHtml(t(kindKey)) + '</td>'
+                        : '<td>' + escapeHtml(p.kind || '') + '</td>';
+
+                // Value cell + trailing column(s):
+                //  - Value kind  → right-aligned number (td.num) + sparkline cell.
+                //  - Other kinds (Text / DayTimer / Weather) → left-aligned,
+                //    wrapping cell spanning the value + sparkline columns. With
+                //    table-layout:fixed this can't widen the value column, so the
+                //    surrounding number rows keep their compact layout.
+                var valueStr = String(p.formatted == null ? (p.value == null ? '' : p.value) : p.formatted);
+                var tailCells = (p.kind === 'value')
+                    ? '<td class="num">' + escapeHtml(valueStr) + '</td>' +
+                      '<td class="spark"></td>'
+                    : '<td class="val-text" colspan="2">' + escapeHtml(valueStr) + '</td>';
+
+                row.innerHTML =
+                    '<td>' + timeStr + '</td>' +
+                    kindCell +
+                    '<td>' + escapeHtml(p.room || '') + '</td>' +
+                    '<td>' + escapeHtml(p.cat  || '') + '</td>' +
+                    '<td>' + escapeHtml(p.name || '') + '</td>' +
+                    tailCells;
+
+                tbody.insertBefore(row, tbody.firstChild);
+
+                // Sparkline only for value-kind with numeric value. Text events
+                // leave the cell empty. Missing UUID (unlikely
+                // but defensive) → we also skip.
+                if (p.kind === 'value' && p.uuid) {
+                    var numericValue = parseNumeric(p);
+                    if (numericValue !== null) {
+                        var points = pushSparkPoint(p.uuid, numericValue);
+                        var canvas = makeSparkCanvas(points);
+                        if (canvas !== null) {
+                            row.querySelector('td.spark').appendChild(canvas);
+                        }
+                    }
+                }
+
+                updateCounter(currentVisibleCount(), tbody.rows.length);
+            }
+
+            // Counts the rows currently visible (not `hidden-by-filter`).
+            // Not optimal for giant tables, but consistent with
+            // applyFilters() which iterates them too. At this stage the visible
+            // rows should be ≤ those in the DOM (which are already
+            // capped by the insertion skip when a filter is active).
+            function currentVisibleCount() {
+                var n = 0;
+                for (var i = 0; i < tbody.rows.length; i++) {
+                    if (!tbody.rows[i].classList.contains('hidden-by-filter')) n++;
+                }
+                return n;
+            }
+
+            // -----------------------------------------------------------------
+            //  EventSource — listens to state events on the existing SSE channel.
+            // -----------------------------------------------------------------
+            var liveStream = null;
+            if (typeof window.EventSource !== 'undefined') {
+                liveStream = new EventSource('/api/v1/state/stream');
+                liveStream.onmessage = function (evt) {
+                    // Paused → drop the message entirely: no parse, no render,
+                    // no counter bump, no sparkline point. We intentionally do
+                    // NOT buffer, so resuming never backfills what was missed
+                    // while paused. The stream stays open throughout (closing /
+                    // reopening could trigger a snapshot replay — the opposite
+                    // of what we want).
+                    if (liveToggle && !liveToggle.checked) return;
+                    try {
+                        var payload = JSON.parse(evt.data);
+                        if (payload.type === 'state') handleLiveState(payload);
+                        // The other types (session, mqtt-*) are ignored on
+                        // this page — no soft reload (the operator doesn't want
+                        // to lose their rows on a session transition).
+                    } catch (e) {
+                        // non-JSON payload — silent
+                    }
+                };
+            } else {
+                counter.textContent = '⚠️ EventSource not supported by this browser';
+            }
+
+            // Close the SSE stream on navigation away. Without this, the browser
+            // keeps the socket open while the page unloads, and
+            // the close is postponed until garbage collect; during this time the
+            // binding sees a zombie subscriber occupying a Quarkus SSE
+            // slot.
+            window.addEventListener('pagehide', function () {
+                if (liveStream) {
+                    liveStream.close();
+                    liveStream = null;
+                }
+            });
+        })();
+    </script>
+</body>
+</html>

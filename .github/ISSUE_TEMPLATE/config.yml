@@ -1,0 +1,12 @@
+# Configures the issue-template chooser shown at /issues/new/choose.
+# https://docs.github.com/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+#
+# blank_issues_enabled: false forces reporters through bug_report.md /
+# feature_request.md instead of an empty issue, which keeps reports actionable.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/quaddan/loxmq/security/advisories/new
+    about: >-
+      Please report security issues privately through GitHub Security
+      Advisories — never as a public issue. See SECURITY.md for the policy.

@@ -1,0 +1,78 @@
+# .gitignore — project-scoped ignores only.
+#
+# Personal / environment ignores (IDE, OS, editor swap files, personal
+# backups) are intentionally NOT listed here so they leave no trace in
+# the project. Put those in your own global excludes file instead:
+#
+#   git config --global core.excludesFile ~/.gitignore
+#
+# This file covers only what every contributor must ignore regardless of
+# their machine: build output, secrets, runtime caches, logs, content
+# deliberately kept out of the public source tree, and the one stray
+# OS artefact (.directory) that tends to litter many folders at once.
+
+# ---- GitHub community-health files (force-tracked) ----
+# A personal global excludesFile (~/.gitignore) may ignore .github/ wholesale.
+# Re-include the directory here so this project's own community files —
+# CODEOWNERS, the issue-template chooser, workflows, dependabot — always track
+# for every contributor, regardless of their machine's global ignores.
+!.github/
+
+# ---- Maven ----
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ---- Quarkus ----
+.quarkus/
+quarkus-app/
+
+# ---- Native build artefacts ----
+*-runner
+*-runner.jar
+*-runner.exe
+*.so
+*.dll
+*.dylib
+
+# ---- Local config that may carry secrets ----
+# Profile-scoped application*.{properties,yml} are committed (template form);
+# a local override is not. Real cert paths and broker / Miniserver credentials
+# live in the operator's deployment, never in version control.
+src/main/resources/application-local.properties
+src/main/resources/application-local.yaml
+.env
+.env.*
+!.env.example
+
+# ---- Logs / JFR ----
+log/
+logs/
+jfr/
+*.jfr
+*.log
+
+# ---- LoxAPP3 cache (loxone.miniserver.cache.directory) ----
+# Populated at runtime when the bridge fetches data/LoxAPP3.json from a real
+# Miniserver. Default location is ./cache relative to CWD. Never tracked.
+cache/
+
+# ---- Coverage / test artefacts ----
+.scannerwork/
+coverage/
+
+# ---- Runtime sockets / lock files ----
+*.lock
+*.pid
+
+# ---- KDE Dolphin folder metadata ----
+# Normally a personal/global ignore, but .directory spawns in many folders
+# at once, so the project ignores it centrally (the one OS-artefact exception).
+.directory

@@ -1,0 +1,91 @@
+# ============================================================================
+# STAGING profile.
+#
+# Activated by `-Dquarkus.profile=staging`. The staging box runs with the same
+# wildcard *.example.com cert as production; the difference is the miniserver
+# UUID + the broker credentials.
+#
+# Properties grouped by prefix: quarkus.* → loxone.*
+# (alphabetical at the prefix level, logical within each group).
+# ============================================================================
+
+quarkus:
+  http:
+    # bare HTTP requests on http://abl-staging.example.com:8080 are redirected
+    # to https://abl-staging.example.com:8443.
+    insecure-requests: redirect
+    tls-configuration-name: server
+
+  log:
+    # production-like INFO. Console = LoxmqConsoleFormatter
+    # (xterm-256 + level emojis); file = plain-text in
+    # logs/application.log with rotation (see base config).
+    level: INFO
+
+  swagger-ui:
+    # exposed on staging for ops poking.
+    always-include: true
+
+  # cert paths.
+  #
+  # Option B layout: certs side-car of the app under /opt/loxmq/certs/.
+  # See application-prod.yml for the detailed rationale (centralized
+  # certbot LXC pushing via rsync, Quarkus TLS Registry auto-reload every
+  # `reload-period`).
+  #
+  # Override via env LOXONE_CERT_DIR for a different layout.
+  tls:
+    server:
+      key-store:
+        pem:
+          "0":
+            cert: ${LOXONE_CERT_DIR:/opt/loxmq/certs}/fullchain.pem
+            key: ${LOXONE_CERT_DIR:/opt/loxmq/certs}/privkey.pem
+      # How often the Quarkus TLS Registry re-checks the cert mtime and rebuilds
+      # the SSLContext if it changed (no binding restart). ISO-8601 duration
+      # "PnDTnHnMnS" (java.time.Duration).
+      reload-period: PT1H
+
+loxone:
+  miniserver:
+    # via internal DNS to satisfy the wildcard cert.
+    connection:
+      host: ${MINISERVER_HOST:miniserver.example.com}
+      port: ${MINISERVER_PORT:443}
+      secure: true
+      # Gen2 firmware 17.x exposes plain HTTP on :80 and HTTPS TLS-only on
+      # :443 (distinct listeners). The binding points at :443 → HTTPS must
+      # be forced from the very first bootstrap call, otherwise the request
+      # leaves as plain HTTP against the TLS-only listener and crashes
+      # with "no bytes".
+      bootstrap-prefer-secure: true
+      # The Miniserver presents a Let's Encrypt cert
+      # `*.<serial>.dyndns.loxonecloud.com` (Loxone CloudDNS). The SAN does
+      # NOT cover `miniserver.example.com`, so the JDK would refuse the
+      # handshake. We skip hostname verification — the LE chain is still
+      # validated against the JVM truststore.
+      # To get rid of this knob: upload a `*.example.com` cert onto the
+      # Miniserver via Loxone Config (Settings > Network > Certificates).
+      tls-skip-hostname-verification: true
+    app:
+      # Placeholder per-instance UUID — REPLACE with your own (see the full
+      # app.id explanation in application.yml). It is the MQTT topic root,
+      # MQTT client-id, JWT client-UUID and on-disk cache dir for this profile.
+      id: de6e88bb-18fd-455e-815b-ba6585418018
+      info: loxmq STAGING
+
+  transport:
+    # broker via the wildcard cert. Actual host/port depend on the operator's FlashMQ TLS listener config.
+    # Credentials supplied via env in deployment:
+    #   LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER     (Base64 user)
+    #   LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD (Base64 password)
+    connection:
+      protocol: wss
+      secure: true
+      host: ${MQTT_BROKER_HOST:broker.example.com}
+      port: ${MQTT_BROKER_PORT:8084}
+      path: /mqtt
+    security:
+      credentials:
+        user: ${LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER:CHANGE_ME}
+        password: ${LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD:CHANGE_ME}

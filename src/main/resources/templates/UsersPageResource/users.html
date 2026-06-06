@@ -1,0 +1,2189 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="users.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>loxmq — Users</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE (loaded sync). -->
+    <script src="/js/i18n.js"></script>
+    <style>
+        :root {
+            --bg: #0e1116;
+            --bg-panel: #161b22;
+            --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9;
+            --fg-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent-warn: #d29922;
+            --accent-down: #f85149;
+            --accent-up: #3fb950;
+            --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            /* Native UI in light variant (date picker icons,
+               scrollbars, etc.) on dark background. */
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg); color: var(--fg); line-height: 1.5;
+        }
+        header {
+            background: var(--bg-panel); border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem; display: flex; justify-content: space-between;
+            align-items: center; gap: 1rem;
+        }
+        header h1 {
+            margin: 0; font-size: 1.25rem; font-weight: 600;
+            display: flex; align-items: center; gap: 0.75rem;
+        }
+        /* Logo + page suffix in the header (same height as dashboard so
+           the navigation between pages feels continuous). */
+        header h1 img.logo { height: 96px; width: auto; display: block; }
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        header nav.tabs { display: flex; gap: 0.5rem; }
+        header nav.tabs a {
+            color: var(--fg-dim); text-decoration: none;
+            padding: 0.4rem 1rem; border: 1px solid transparent; border-radius: 4px;
+            font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        header nav.tabs a:hover { color: var(--fg); background: var(--bg-panel-hover); }
+        header nav.tabs a.active { color: var(--accent); border-color: var(--accent); }
+        /* i18n FR/EN/DE language combobox. */
+        header .lang-switcher {
+            /* Globe icon (inline SVG, fg-dim stroke) pinned to the left ;
+               padding-left clears room for it. Native select arrow stays
+               on the right. */
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 0.55rem center;
+            background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.35rem 0.5rem 0.35rem 1.9rem; font-family: inherit;
+            font-size: 0.8rem; cursor: pointer;
+        }
+        header .lang-switcher:hover { border-color: var(--accent); }
+        main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+        .panel {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 6px; padding: 1.5rem; margin-bottom: 1.5rem;
+        }
+        .panel h2 {
+            margin: 0 0 1rem 0; font-size: 1rem;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--fg-dim); border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        table {
+            width: 100%; border-collapse: collapse;
+            font-family: var(--mono); font-size: 0.85rem;
+        }
+        table th, table td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border); text-align: left; vertical-align: top;
+        }
+        table th {
+            color: var(--fg-dim); text-transform: uppercase;
+            font-size: 0.7rem; letter-spacing: 0.05em; border-bottom-width: 2px;
+        }
+        table tr:hover { background: var(--bg-panel-hover); }
+        table td.actions { white-space: nowrap; text-align: right; }
+        .badge {
+            display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px;
+            font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .badge-admin { background: var(--accent); color: #000; }
+        .badge-self  { background: var(--accent-warn); color: #000; }
+        /* userState chips per V17 p.14. An earlier CSS only had 0/1/2 (1/2
+           with stale semantics) ; states 3/4 ended up with no chip
+           background. Now :
+             0 = Active no-limit (green)
+             1 = Disabled         (grey)
+             2 = Enabled until    (amber — time-bounded, eventual expiry)
+             3 = Enabled from     (amber — currently pending or active)
+             4 = Timespan         (amber — bounded both ends)
+           The CURRENT active/expired/pending verdict is shown by the
+           "Currently" row in the View tab (computeUserStatus). */
+        .badge-state-0 { background: var(--accent-up);   color: #000; }
+        .badge-state-1 { background: var(--fg-dim);      color: #000; }
+        .badge-state-2 { background: var(--accent-warn); color: #000; }
+        .badge-state-3 { background: var(--accent-warn); color: #000; }
+        .badge-state-4 { background: var(--accent-warn); color: #000; }
+        button {
+            background: var(--bg-panel-hover); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.4rem 0.8rem; font-size: 0.8rem; cursor: pointer;
+        }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button:disabled {
+            opacity: 0.4; cursor: not-allowed;
+            background: var(--bg-panel-hover) !important;
+            color: var(--fg-dim) !important;
+            border-color: var(--border) !important;
+        }
+        #status-bar {
+            margin-top: 0.5rem; font-family: var(--mono); font-size: 0.8rem;
+            min-height: 1.4em;
+        }
+        #status-bar.err { color: var(--accent-down); }
+        #status-bar.ok  { color: var(--accent-up); }
+        #detail-modal, #create-modal, #group-modal {
+            display: none;
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7); z-index: 100;
+            align-items: center; justify-content: center;
+        }
+        #detail-modal.open, #create-modal.open, #group-modal.open { display: flex; }
+        #detail-modal .modal-card, #create-modal .modal-card, #group-modal .modal-card {
+            background: var(--bg-panel); border: 1px solid var(--border);
+            border-radius: 6px; max-width: 720px; width: 92%;
+            max-height: 80vh; overflow-y: auto; padding: 1.5rem;
+        }
+        #detail-modal dl {
+            display: grid; grid-template-columns: 1fr 2fr; gap: 0.4rem 1rem;
+            margin: 0; font-family: var(--mono); font-size: 0.8rem;
+        }
+        #detail-modal dt { color: var(--fg-dim); }
+        /* UI mutations. Badges removable + add-row. */
+        .btn-danger {
+            background: #b62324 !important;
+            color: #fff !important;
+            border-color: #b62324 !important;
+        }
+        .btn-danger:hover { background: #cf2e2e !important; }
+        .btn-primary {
+            background: var(--accent) !important;
+            color: #000 !important;
+            border-color: var(--accent) !important;
+        }
+        .btn-primary:hover { background: #79b8ff !important; }
+        /* Disable is a reversible state change (the user can be re-enabled
+           via the Edit form), whereas Delete is destructive and
+           irreversible. Sharing btn-danger for both confused the eye :
+           same red, different semantic.
+           Operator preference : the Disable button visually mirrors the
+           "Disabled" chip (grey, --fg-dim) rather than amber. The chip
+           and the button share the same colour → one glance says "this
+           row → grey state = disabled". Named .btn-muted to reflect the
+           actual semantic (muted / inactive action, not a warning). */
+        .btn-muted {
+            background: var(--fg-dim) !important;
+            color: #000 !important;
+            border-color: var(--fg-dim) !important;
+        }
+        .btn-muted:hover { background: #a8b1bb !important; }
+        /* Button palette :
+              .btn-primary  (blue   --accent)       — primary creates (+ New user / + New group)
+              (default)                             — neutral : View / Edit
+              .btn-muted    (grey   --fg-dim)       — caution : Disable
+              .btn-danger   (red    --accent-down)  — destructive : Delete */
+        .group-pills {
+            display: flex; flex-wrap: wrap; gap: 0.3rem;
+            margin: 0.5rem 0;
+        }
+        .group-pill {
+            display: inline-flex; align-items: center; gap: 0.35rem;
+            background: var(--bg); border: 1px solid var(--border);
+            border-radius: 12px; padding: 0.15rem 0.7rem;
+            font-size: 0.75rem; font-family: var(--mono);
+        }
+        .group-pill button {
+            background: transparent; border: none;
+            color: var(--fg-dim); cursor: pointer;
+            padding: 0 0.1rem; font-size: 0.9rem; line-height: 1;
+        }
+        .group-pill button:hover { color: var(--accent-down); background: transparent; }
+        /* User-chip pill rendered in the Groups table Members column.
+           Same dimensions as group-pill but the bg/fg are set inline
+           (per-user status colour from STATUS_BADGE). The chip texts
+           are user.name ; full status text is in the title attr for
+           hover. */
+        .user-chips {
+            display: flex; flex-wrap: wrap; gap: 0.3rem;
+        }
+        .user-chip {
+            display: inline-block; padding: 0.12rem 0.55rem;
+            border-radius: 11px; font-size: 0.7rem;
+            font-family: var(--mono); white-space: nowrap;
+        }
+        .group-add-row {
+            display: flex; gap: 0.5rem; align-items: center;
+            margin-top: 0.75rem; padding-top: 0.75rem;
+            border-top: 1px solid var(--border);
+        }
+        .group-add-row select {
+            background: var(--bg); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.4rem 0.6rem; font-family: var(--mono);
+            font-size: 0.8rem; min-width: 12rem;
+        }
+        .modal-section-title {
+            font-size: 0.75rem; text-transform: uppercase;
+            letter-spacing: 0.05em; color: var(--fg-dim);
+            margin: 1rem 0 0.3rem 0;
+        }
+        /* Add user form + Edit modal forms. */
+        .form-row {
+            display: grid; grid-template-columns: 10rem 1fr;
+            gap: 0.5rem 1rem; align-items: center;
+            margin: 0.4rem 0;
+        }
+        .form-row label {
+            font-size: 0.75rem; color: var(--fg-dim);
+            text-transform: uppercase; letter-spacing: 0.03em;
+        }
+        .form-row input, .form-row select {
+            background: var(--bg); color: var(--fg);
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.4rem 0.6rem; font-family: var(--mono);
+            font-size: 0.8rem; width: 100%;
+        }
+        .form-row input:focus, .form-row select:focus {
+            outline: none; border-color: var(--accent);
+        }
+        .panel-toolbar {
+            display: flex; justify-content: space-between;
+            align-items: center; margin-bottom: 0.5rem;
+        }
+        .modal-footer {
+            display: flex; justify-content: flex-end; gap: 0.5rem;
+            margin-top: 1.25rem; padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .modal-tabs {
+            display: flex; gap: 0; margin: 1rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .modal-tabs button {
+            background: transparent; border: none;
+            color: var(--fg-dim); padding: 0.5rem 1rem;
+            font-size: 0.8rem; text-transform: uppercase;
+            letter-spacing: 0.05em; cursor: pointer;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+        }
+        .modal-tabs button.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+        .modal-tabs button:hover { color: var(--fg); background: transparent; }
+        .modal-tab-panel { display: none; }
+        .modal-tab-panel.active { display: block; }
+        footer {
+            padding: 1rem 2rem; color: var(--fg-dim); font-size: 0.8rem;
+            text-align: center; border-top: 1px solid var(--border);
+        }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/" style="line-height:0;"><img class="logo" src="/images/loxmq-logo-compact.svg" alt=""></a>
+            <span class="vh">loxmq</span>
+        </h1>
+        <nav class="tabs">
+            <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
+            <a href="/users"     data-i18n="nav.users" class="active">Users</a>
+            <a href="/logs"      data-i18n="nav.logs">Logs</a>
+        </nav>
+        <!-- Language combobox. -->
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <section class="panel">
+            <div class="panel-toolbar">
+                <h2 style="margin: 0; border: 0; padding: 0;"><span data-i18n="users.tab.users">Users</span> (<span id="users-count">…</span>)</h2>
+                <div style="display:flex; gap:0.5rem; align-items:center; margin-left:auto;">
+                    <label for="auto-refresh-toggle"
+                           style="font-size:0.75rem; color:var(--fg-dim); display:flex; align-items:center; gap:0.3rem; cursor:pointer;"
+                           data-i18n-attr="title:users.refresh.auto30"
+                           title="Auto-refresh every 30s (paused while a modal is open)">
+                        <input type="checkbox" id="auto-refresh-toggle" checked> <span data-i18n="common.auto30s">auto 30s</span>
+                    </label>
+                    <button id="refresh-now" type="button" data-i18n="users.refresh.btn" data-i18n-attr="title:users.refresh.now" title="Refresh now">↻ Refresh</button>
+                    <button id="open-create" type="button" class="btn-primary">+ <span data-i18n="users.add.user">New user</span></button>
+                </div>
+            </div>
+            <table id="users-table">
+                <thead>
+                    <tr>
+                        <th data-i18n="users.table.name">Name</th>
+                        <th data-i18n="users.table.admin">Admin?</th>
+                        <th data-i18n="users.table.state">State</th>
+                        <th data-i18n="users.table.validity">Validity</th>
+                        <th class="actions" data-i18n="users.table.actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody><!-- populated by JS --></tbody>
+            </table>
+            <div id="status-bar"></div>
+        </section>
+
+        <section class="panel">
+            <div class="panel-toolbar">
+                <h2 style="margin: 0; border: 0; padding: 0;"><span data-i18n="users.tab.groups">Groups</span> (<span id="groups-count">…</span>)</h2>
+                <button id="open-create-group" type="button" class="btn-primary">+ <span data-i18n="users.add.group">New group</span></button>
+            </div>
+            <table id="groups-table">
+                <thead>
+                    <tr>
+                        <th data-i18n="users.table.name">Name</th>
+                        <th data-i18n="users.table.description">Description</th>
+                        <th data-i18n="users.table.members">Members</th>
+                        <th class="actions" data-i18n="users.table.actions">Actions</th>
+                    </tr>
+                </thead>
+                <tbody><!-- populated by JS --></tbody>
+            </table>
+        </section>
+    </main>
+
+    <!-- Detail / Edit modal — shown when an operator clicks "View" on a user row. -->
+    <div id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+        <div class="modal-card">
+            <h2 id="detail-title" data-i18n="users.detail.title">User detail</h2>
+
+            <div class="modal-tabs">
+                <button type="button" data-tab="view"   class="active" data-i18n="users.tab.view">View</button>
+                <button type="button" data-tab="edit" data-i18n="users.tab.editMeta">Edit metadata</button>
+                <button type="button" data-tab="groups" data-i18n="users.tab.groupsTab">Groups</button>
+                <button type="button" data-tab="auth" data-i18n="users.tab.authTab">Auth</button>
+                <button type="button" data-tab="nfc" data-i18n="users.tab.nfcTab">NFC</button>
+            </div>
+
+            <div class="modal-tab-panel active" data-panel="view">
+                <dl id="detail-fields"><!-- populated by JS --></dl>
+            </div>
+
+            <div class="modal-tab-panel" data-panel="edit">
+                <form id="edit-form" autocomplete="off">
+                    <!-- Body populated by JS — one row per editable field. -->
+                </form>
+                <div class="modal-footer">
+                    <button type="button" id="edit-save" class="btn-primary" data-i18n="users.btn.saveChanges">Save changes</button>
+                </div>
+            </div>
+
+            <div class="modal-tab-panel" data-panel="groups">
+                <div id="groups-section"><!-- populated by JS --></div>
+            </div>
+
+            <!-- Auth tab : 3 single-field forms for the password /
+                 visu-password / access-code endpoints. Each form
+                 independent ; no save-all, on purpose, so the operator
+                 can't blow up all three creds at once. -->
+            <div class="modal-tab-panel" data-panel="auth">
+                <p style="font-size: 0.8rem; color: var(--fg-dim);">
+                    Sensitive — operations here are audit-logged. Plaintext is
+                    sent over the local network (LAN+VPN posture); never enter
+                    a password the operator wouldn't be willing to lose.
+                </p>
+
+                <div class="modal-section-title" data-i18n="users.section.loginPassword">Login password</div>
+                <div class="form-row">
+                    <label for="auth-pw" data-i18n="users.label.newPassword">New password</label>
+                    <input type="password" id="auth-pw" autocomplete="new-password">
+                </div>
+                <div class="modal-footer" style="margin-top: 0.5rem; padding-top: 0.5rem;">
+                    <button type="button" id="auth-pw-save" class="btn-primary" data-i18n="users.btn.savePassword">Save password</button>
+                </div>
+
+                <div class="modal-section-title" data-i18n="users.section.visuPassword">Visualization password</div>
+                <div class="form-row">
+                    <label for="auth-visu" data-i18n="users.label.newVisu">New visu password</label>
+                    <input type="password" id="auth-visu" autocomplete="new-password">
+                </div>
+                <div class="modal-footer" style="margin-top: 0.5rem; padding-top: 0.5rem;">
+                    <button type="button" id="auth-visu-save" class="btn-primary" data-i18n="users.btn.saveVisu">Save visu password</button>
+                </div>
+
+                <div class="modal-section-title" data-i18n="users.section.accessCode">Access code (NFC Code Touch / Intercom)</div>
+                <div class="form-row">
+                    <label for="auth-code" data-i18n="users.label.newAccessCode">New access code</label>
+                    <input type="text" inputmode="numeric" pattern="[0-9]*" id="auth-code"
+                           placeholder="4 to 12 digits">
+                </div>
+                <div class="modal-footer" style="margin-top: 0.5rem; padding-top: 0.5rem;">
+                    <button type="button" id="auth-code-save" class="btn-primary" data-i18n="users.btn.saveCode">Save access code</button>
+                </div>
+            </div>
+
+            <!-- NFC tab : list assigned tags + add/discover form. -->
+            <div class="modal-tab-panel" data-panel="nfc">
+                <div class="modal-section-title" data-i18n="users.section.assignedTags">Assigned tags</div>
+                <div id="nfc-tags-list"><!-- populated by JS --></div>
+
+                <div class="modal-section-title" data-i18n="users.section.addTag">Add a tag</div>
+                <p style="font-size: 0.8rem; color: var(--fg-dim); margin: 0.3rem 0 0.7rem 0;" data-i18n-html="users.nfc.hint">
+                    Click <em>Discover</em>, then present the NFC card to any
+                    reader (NFC Code Touch, Intercom). The Miniserver
+                    listens for up to ~60 seconds. You can also type the
+                    tag UID manually if you already know it.
+                </p>
+                <div class="form-row">
+                    <label for="nfc-tag-id" data-i18n="users.label.tagId">Tag UID</label>
+                    <input type="text" id="nfc-tag-id" data-i18n-attr="placeholder:users.nfc.placeholder" placeholder="AA:BB:CC:DD or AABBCCDD">
+                </div>
+                <div class="form-row">
+                    <label for="nfc-tag-name" data-i18n="users.label.tagName">Friendly name</label>
+                    <input type="text" id="nfc-tag-name" placeholder="(optional)">
+                </div>
+                <div class="modal-footer" style="margin-top: 0.5rem; padding-top: 0.5rem;">
+                    <button type="button" id="nfc-discover" data-i18n="users.btn.discover">Discover (tap a tag)</button>
+                    <button type="button" id="nfc-add" class="btn-primary" data-i18n="users.btn.addTag">Add tag</button>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button id="detail-close" type="button" data-i18n="common.close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create-user modal — opened by the "+ New user" button. -->
+    <div id="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title">
+        <div class="modal-card">
+            <h2 id="create-title" data-i18n="users.create.title">Create user</h2>
+            <p style="font-size: 0.8rem; color: var(--fg-dim);">
+                Only the <strong>name</strong> field is required ; optional
+                metadata can be filled in here or later via the Edit tab.
+            </p>
+            <form id="create-form" autocomplete="off">
+                <!-- Body populated by JS — same field set as edit, minus uuid. -->
+            </form>
+            <div class="modal-footer">
+                <button type="button" id="create-cancel" data-i18n="common.cancel">Cancel</button>
+                <button type="button" id="create-submit" class="btn-primary" data-i18n="users.create.submit">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Group create / edit modal. Switches between create and edit mode
+         via dataset on the modal element. -->
+    <div id="group-modal" role="dialog" aria-modal="true" aria-labelledby="group-modal-title">
+        <div class="modal-card" style="max-width: 540px;">
+            <h2 id="group-modal-title" data-i18n="users.group.title">Group</h2>
+            <p style="font-size: 0.8rem; color: var(--fg-dim);">
+                Loxone groups carry permission bits (User-Mgmt, Op-Modes,
+                Visualization, ...) which can only be edited via Loxone Config.
+                Here you can manage the name and the description.
+            </p>
+            <form id="group-form" autocomplete="off">
+                <div class="form-row">
+                    <label for="group-name"><span data-i18n="users.table.name">Name</span> *</label>
+                    <input type="text" id="group-name" required>
+                </div>
+                <div class="form-row">
+                    <label for="group-description" data-i18n="users.table.description">Description</label>
+                    <input type="text" id="group-description">
+                </div>
+            </form>
+            <div class="modal-footer">
+                <button type="button" id="group-cancel" data-i18n="common.cancel">Cancel</button>
+                <button type="button" id="group-save" class="btn-primary" data-i18n="users.btn.saveMetadata">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <a href="/" data-i18n="common.backToDashboard">← Dashboard</a> ·
+        <a href="/api/v1/users-snapshot">/api/v1/users-snapshot</a> ·
+        <a href="/q/health">/q/health</a>
+    </footer>
+
+    <script>
+        (function () {
+            var usersTbody  = document.querySelector('#users-table tbody');
+            var groupsTbody = document.querySelector('#groups-table tbody');
+            var usersCount  = document.getElementById('users-count');
+            var groupsCount = document.getElementById('groups-count');
+            var statusBar   = document.getElementById('status-bar');
+            var modal       = document.getElementById('detail-modal');
+            var modalFields = document.getElementById('detail-fields');
+            var modalTitle  = document.getElementById('detail-title');
+            var modalClose  = document.getElementById('detail-close');
+            var createModal   = document.getElementById('create-modal');
+            var createForm    = document.getElementById('create-form');
+            var createCancel  = document.getElementById('create-cancel');
+            var createSubmit  = document.getElementById('create-submit');
+            var openCreate    = document.getElementById('open-create');
+            var editForm      = document.getElementById('edit-form');
+            var editSave      = document.getElementById('edit-save');
+            var groupsSection = document.getElementById('groups-section');
+            var modalTabs     = modal.querySelectorAll('.modal-tabs button');
+            // Refresh controls (manual + auto-tick).
+            var refreshNowBtn      = document.getElementById('refresh-now');
+            var autoRefreshToggle  = document.getElementById('auto-refresh-toggle');
+            var groupModal         = document.getElementById('group-modal');
+
+            // STATE_LABEL aligned with V17 Usermanagement.pdf p.14, matches
+            // the Edit dropdown for userState 0..4.
+            // STATE_LABEL and EXPIRATION_ACTION_LABEL rebuilt on every
+            // language change (via rebuildI18nUsersArrays() + 'i18n:changed'
+            // event) instead of being static EN. The boot values
+            // come from t() which already resolves the detected language
+            // (localStorage > navigator > 'en').
+            var STATE_LABEL              = {};
+            var EXPIRATION_ACTION_LABEL  = {};
+            function rebuildI18nUsersArrays() {
+                STATE_LABEL = {};
+                for (var i = 0; i <= 4; i++) {
+                    STATE_LABEL[i] = t('users.stateLabel.' + i);
+                }
+                EXPIRATION_ACTION_LABEL = {
+                    0: t('users.expirationAction.0'),
+                    1: t('users.expirationAction.1')
+                };
+            }
+            rebuildI18nUsersArrays();
+
+            // Editable fields (label, key, type). type ∈
+            //   text   — string field
+            //   bool   — boolean (rendered as select Yes/No)
+            //   number — long/int
+            //   state  — userState dropdown (0/1/2/3/4)
+            //   action — expirationAction dropdown (0=deactivate, 1=delete)
+            //   epoch  — Loxone epoch (seconds since 2009-01-01 UTC).
+            //            Rendered as HTML5 <input type="datetime-local">
+            //            for operator-friendly date picking. Conversion to /
+            //            from Loxone epoch is handled by
+            //            loxoneEpochToDatetimeLocal / datetimeLocalToLoxoneEpoch.
+            //
+            // Order = display order in the form ; mirrors the spec.
+            var EDIT_FIELDS = [
+                { key: 'name',             label: 'Name',                type: 'text', required: true  },
+                { key: 'desc',             label: 'Description',         type: 'text' },
+                { key: 'userid',           label: 'User ID',             type: 'text' },
+                { key: 'firstname',        label: 'Firstname',           type: 'text' },
+                { key: 'lastname',         label: 'Lastname',            type: 'text' },
+                { key: 'email',            label: 'Email',               type: 'text' },
+                { key: 'phone',            label: 'Phone',               type: 'text' },
+                { key: 'uniqueUserId',     label: 'Unique user ID',      type: 'text' },
+                { key: 'company',          label: 'Company',             type: 'text' },
+                { key: 'department',       label: 'Department',          type: 'text' },
+                { key: 'personalno',       label: 'Personal no.',        type: 'text' },
+                { key: 'title',            label: 'Title',               type: 'text' },
+                { key: 'debitor',          label: 'Debitor',             type: 'text' },
+                { key: 'customField1',     label: 'Custom 1',            type: 'text' },
+                { key: 'customField2',     label: 'Custom 2',            type: 'text' },
+                { key: 'customField3',     label: 'Custom 3',            type: 'text' },
+                { key: 'customField4',     label: 'Custom 4',            type: 'text' },
+                { key: 'customField5',     label: 'Custom 5',            type: 'text' },
+                { key: 'userState',        label: 'User state',          type: 'state' },
+                // Valid from before Valid until: chronological order
+                // (start → end), operator request.
+                { key: 'validFrom',        label: 'Valid from',          type: 'epoch' },
+                { key: 'validUntil',       label: 'Valid until',         type: 'epoch' },
+                { key: 'expirationAction', label: 'Expiration action',   type: 'action' },
+                { key: 'changePassword',   label: 'Must change pw',      type: 'bool' }
+            ];
+
+            // ----------------------------------------------------------------
+            // Gate validUntil / validFrom / expirationAction on userState.
+            //
+            // Per V17 Usermanagement.pdf p.14 :
+            //   validUntil       → only used when userState in [2, 4]
+            //   validFrom        → only used when userState in [3, 4]
+            //   expirationAction → only used when userState in [2, 4]
+            //
+            // Sending these fields with the wrong userState is silently
+            // ignored by the Miniserver — the operator clicks Save, sees
+            // no error, then re-opens the user and discovers nothing
+            // changed. Confusing. We hide the irrelevant rows in the UI
+            // and skip them in the serialised patch.
+            //
+            // userState=0 (Active, no time limits) and userState=1
+            // (Disabled) → all three are irrelevant, hidden.
+            //
+            // When userState is "(unchanged)" in the edit modal (operator
+            // hasn't picked a state), we keep showing the existing user's
+            // applicable fields based on the user's CURRENT state.
+            // ----------------------------------------------------------------
+            var APPLICABLE_STATES = {
+                validUntil:       new Set([2, 4]),
+                validFrom:        new Set([3, 4]),
+                expirationAction: new Set([2, 4])
+            };
+
+            function effectiveUserState(form, originalUser) {
+                var sel = form.querySelector('[data-key="userState"]');
+                if (sel && sel.value !== '') {
+                    var n = parseInt(sel.value, 10);
+                    if (!isNaN(n)) return n;
+                }
+                // Form input "(unchanged)" → fall back to the original user's
+                // state (edit modal) or null (create modal — original is null).
+                if (originalUser && originalUser.userState != null) {
+                    return Number(originalUser.userState);
+                }
+                return null;
+            }
+
+            function applyUserStateGating(form, originalUser) {
+                var state = effectiveUserState(form, originalUser);
+                Object.keys(APPLICABLE_STATES).forEach(function (key) {
+                    var input = form.querySelector('[data-key="' + key + '"]');
+                    if (!input) return;
+                    var row = input.closest('.form-row');
+                    if (!row) return;
+                    if (state == null) {
+                        // No state context — show all so create modal is usable
+                        // before operator picks a state.
+                        row.style.display = '';
+                        return;
+                    }
+                    row.style.display = APPLICABLE_STATES[key].has(state) ? '' : 'none';
+                });
+            }
+
+            function isRowHidden(el) {
+                var row = el.closest('.form-row');
+                return row && row.style.display === 'none';
+            }
+
+            // ----------------------------------------------------------------
+            // Loxone epoch ↔ HTML5 datetime-local helpers.
+            //
+            // Loxone uses seconds since 2009-01-01 00:00:00 UTC (NOT Unix
+            // epoch). The offset between the two is 1230768000 seconds.
+            //
+            // HTML5 <input type="datetime-local"> works with a NAIVE local
+            // string "YYYY-MM-DDTHH:mm" — no timezone. We read/write that
+            // shape and convert via the JS Date interpreted-as-local.
+            //
+            // Edge cases :
+            //   - Loxone epoch 0 / null / missing → empty input value
+            //     (the operator left "Valid until" unset).
+            //   - Operator clears the input → patch the field as null/0
+            //     to remove the constraint on the Miniserver side.
+            // ----------------------------------------------------------------
+            var LOXONE_EPOCH_OFFSET_SEC = 1230768000;
+
+            function loxoneEpochToDatetimeLocal(epoch) {
+                if (epoch == null || epoch === 0) return '';
+                var unixMs = (Number(epoch) + LOXONE_EPOCH_OFFSET_SEC) * 1000;
+                var d = new Date(unixMs);
+                if (isNaN(d.getTime())) return '';
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                       'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+            }
+
+            function datetimeLocalToLoxoneEpoch(str) {
+                if (!str) return null;
+                var d = new Date(str);   // datetime-local is naive local
+                if (isNaN(d.getTime())) return null;
+                return Math.floor(d.getTime() / 1000) - LOXONE_EPOCH_OFFSET_SEC;
+            }
+
+            // Humanise Loxone epoch for the View tab. Same local-clock
+            // interpretation as loxoneEpochToDatetimeLocal, but the output
+            // is "YYYY-MM-DD HH:mm" (space, not 'T') for readability.
+            // Returns '-' on null / 0 / NaN so the row is visually
+            // consistent across users.
+            function formatLoxoneEpoch(epoch) {
+                if (epoch == null || epoch === 0) return '-';
+                var unixMs = (Number(epoch) + LOXONE_EPOCH_OFFSET_SEC) * 1000;
+                var d = new Date(unixMs);
+                if (isNaN(d.getTime())) return '-';
+                var pad = function (n) { return String(n).padStart(2, '0'); };
+                return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+                       ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+            }
+
+            // Derive a human-readable "Currently active?" verdict from
+            // userState + validFrom + validUntil against the operator's
+            // wall clock. The View tab's "State" row already shows the
+            // CONFIGURED mode (Timespan, Enabled until, …) but says nothing
+            // about whether the time window is currently open. Without this,
+            // the operator has to read 3 fields and do mental arithmetic to
+            // know if the user can log in right now.
+            //
+            // Returns { kind, text } where kind ∈
+            //   'active'  → user can log in now (green)
+            //   'pending' → time window not yet open (amber)
+            //   'expired' → time window already closed (red)
+            //   'disabled' → userState=1 (grey)
+            //   'unknown' → required dates are missing for a state that
+            //               needs them (red — config bug on Miniserver side)
+            //
+            // Loxone epoch ↔ JS Date conversion mirrors formatLoxoneEpoch :
+            // we add the 2009-01-01 offset and treat the result as a Unix
+            // ms timestamp. Comparing with Date.now() is timezone-safe
+            // because both sides are UTC epochs.
+            function computeUserStatus(u) {
+                var state = (u.userState != null) ? Number(u.userState) : null;
+                var now   = Date.now();
+                var loxToMs = function (epoch) {
+                    if (epoch == null) return null;
+                    return (Number(epoch) + LOXONE_EPOCH_OFFSET_SEC) * 1000;
+                };
+                var vu = loxToMs(u.validUntil);
+                var vf = loxToMs(u.validFrom);
+
+                // All status text via t() i18n FR/EN/DE.
+                if (state === 0) {
+                    return { kind: 'active',  text: t('users.status.activeNoLimit') };
+                }
+                if (state === 1) {
+                    return { kind: 'disabled', text: t('users.status.disabled') };
+                }
+                if (state === 2) {  // Enabled until
+                    if (vu == null) return { kind: 'unknown', text: t('users.status.missingValidUntil2') };
+                    var dvu2 = formatLoxoneEpoch(u.validUntil);
+                    return (now < vu)
+                        ? { kind: 'active',  text: t('users.status.activeExpires', { date: dvu2 }) }
+                        : { kind: 'expired', text: t('users.status.expiredSince',  { date: dvu2 }) };
+                }
+                if (state === 3) {  // Enabled from
+                    if (vf == null) return { kind: 'unknown', text: t('users.status.missingValidFrom3') };
+                    var dvf3 = formatLoxoneEpoch(u.validFrom);
+                    return (now >= vf)
+                        ? { kind: 'active',  text: t('users.status.activeSince',    { date: dvf3 }) }
+                        : { kind: 'pending', text: t('users.status.pendingStarts',  { date: dvf3 }) };
+                }
+                if (state === 4) {  // Timespan
+                    if (vu == null || vf == null) {
+                        return { kind: 'unknown', text: t('users.status.missingForState4') };
+                    }
+                    var dvf4 = formatLoxoneEpoch(u.validFrom);
+                    var dvu4 = formatLoxoneEpoch(u.validUntil);
+                    if (now < vf) return { kind: 'pending', text: t('users.status.pendingStartsUntil', { from: dvf4, to: dvu4 }) };
+                    if (now > vu) return { kind: 'expired', text: t('users.status.expiredSince',       { date: dvu4 }) };
+                    return         { kind: 'active',  text: t('users.status.activeExpires',      { date: dvu4 }) };
+                }
+                return { kind: 'unknown', text: t('users.status.unknownState', { state: state }) };
+            }
+
+            // Colour palette for the Current status badge. Maps directly
+            // to the existing CSS accents declared in the template's :root
+            // block (no new vars to maintain).
+            var STATUS_COLOR = {
+                active:   'var(--accent-up)',    // green
+                pending:  'var(--accent-warn)',  // amber
+                expired:  'var(--accent-down)',  // red
+                disabled: 'var(--fg-dim)',       // grey
+                unknown:  'var(--accent-down)'   // red — surface as error
+            };
+
+            // bg+fg pair for the state chip in the table. White text on
+            // --accent-down (#f85149, a pinkish-red) lacked contrast in dim
+            // ambient light. Switched to black across the board — black on
+            // #f85149 reads cleanly and matches the rest of the chip palette
+            // (active green / pending amber / disabled grey all use black).
+            // Single text colour also simplifies cognition : same foreground,
+            // only the background carries the status signal.
+            var STATUS_BADGE = {
+                active:   { bg: 'var(--accent-up)',    fg: '#000' },
+                pending:  { bg: 'var(--accent-warn)',  fg: '#000' },
+                expired:  { bg: 'var(--accent-down)',  fg: '#000' },
+                disabled: { bg: 'var(--fg-dim)',       fg: '#000' },
+                unknown:  { bg: 'var(--accent-down)',  fg: '#000' }
+            };
+
+            // Module state — populated by refresh() / refreshMetadata().
+            var allGroups = [];
+            var allGroupsByUuid = {};
+            var allUsers = [];
+            var currentDetailUuid = null;
+            var currentDetailName = '';
+            var currentDetailUser = null;    // Last full UserDetail from getUser
+            var bindingUserName  = null;     // Populated lazily — used to mark self badges
+            // Operator-configured custom field labels + autocomplete
+            // suggestion lists. Both fetched once at page load ; reused on
+            // every modal open. Best-effort — if the Miniserver isn't
+            // available yet, we keep the EDIT_FIELDS defaults
+            // ("Custom 1" / "Custom 2" / ...).
+            var customFieldLabels   = {};
+            var propertyOptions     = {};
+
+            function setStatus(kind, text) {
+                statusBar.className = kind || '';
+                statusBar.textContent = text || '';
+            }
+
+            function escapeHtml(s) {
+                return String(s == null ? '' : s)
+                    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;');
+            }
+
+            // AbortController scoped to the page-load fetches. Refreshed
+            // each time refresh() is called (cancels any prior in-flight
+            // refresh), AND aborted on pagehide (cancels when operator
+            // navigates away). Prevents zombie fetches from continuing to
+            // the Miniserver for a page we left (cause of some of the
+            // rapid-click lag observed in practice).
+            //
+            // Mutation fetches (POST/DELETE) do NOT go through this signal —
+            // they are operator-triggered, last < 1s, and their silent
+            // abort would be confusing for the operator.
+            var pageAbortController = null;
+            function newPageSignal() {
+                if (pageAbortController) pageAbortController.abort();
+                pageAbortController = new AbortController();
+                return pageAbortController.signal;
+            }
+            function isAborted(err) {
+                return err && (err.name === 'AbortError' ||
+                               err.message === 'aborted' ||
+                               err.message === 'signal is aborted without reason');
+            }
+            window.addEventListener('pagehide', function () {
+                if (pageAbortController) pageAbortController.abort();
+            });
+
+            // Re-render the Users + Groups table (with State, Validity,
+             // Members chips and dynamic buttons) on every
+             // language change. If a modal is open, the
+             // detail dl re-render is also triggered.
+            window.addEventListener('i18n:changed', function () {
+                rebuildI18nUsersArrays();
+                if (allUsers && allUsers.length) {
+                    renderUsers(allUsers);
+                    renderGroups(allGroups);
+                    // renderUsers/renderGroups just rebuilt the tables with
+                    // empty Member cells and "loading…" Validity cells. The
+                    // membership + validity data is NOT in allUsers/allGroups
+                    // — it comes from the per-user getUser enrichment round —
+                    // so repaint it INSTANTLY from userDetailsCache instead of
+                    // leaving the cells blank until the next 30s auto-refresh
+                    // poll. That lag was surfacing as every group showing
+                    // "no members" right after a language switch.
+                    reapplyEnrichmentFromCache();
+                    // Only NOW stamp "no members" — on the cells still empty
+                    // after the cache repaint (genuinely member-less groups,
+                    // or users not yet cached on a mid-initial-load switch).
+                    finalizeEmptyGroupCells();
+                }
+                // If the Detail modal is open, re-render its
+                // View panel (dl with State / Validity / etc.).
+                if (modal && modal.classList.contains('open') && currentDetailUuid) {
+                    var u = allUsers.find(function (x) { return x.uuid === currentDetailUuid; });
+                    if (u && typeof renderDetailView === 'function') renderDetailView(u);
+                }
+            });
+
+            function refresh() {
+                var signal = newPageSignal();
+                // Toast Loading via t() i18n.
+                setStatus('', t('users.snapshotLoading'));
+                fetch('/api/v1/users-snapshot', { signal: signal })
+                    .then(function (r) {
+                        if (!r.ok) return r.json().then(function (j) { throw new Error(j.message || ('HTTP ' + r.status)); });
+                        return r.json();
+                    })
+                    .then(function (snap) {
+                        allGroups = snap.groups || [];
+                        allGroupsByUuid = {};
+                        allGroups.forEach(function (g) { allGroupsByUuid[g.uuid] = g; });
+                        allUsers = snap.users || [];
+                        renderUsers(allUsers);
+                        renderGroups(allGroups);
+                        // Toast snapshot via t() i18n.
+                        setStatus('ok', t('users.snapshot', { users: allUsers.length, groups: allGroups.length }));
+                        // Fire one getUser/[uuid] per user (unified enrichment)
+                        // and populate user-row Validity/chip + group Members
+                        // chips. After all promises settle, finalize still-empty
+                        // group cells with a "no members" placeholder.
+                        var signal = pageAbortController ? pageAbortController.signal : null;
+                        enrichAllUsers(allUsers, signal).then(finalizeEmptyGroupCells);
+                    })
+                    .catch(function (e) {
+                        if (isAborted(e)) return;    // silent on navigate-away
+                        usersTbody.innerHTML = '';
+                        groupsTbody.innerHTML = '';
+                        usersCount.textContent = '?';
+                        groupsCount.textContent = '?';
+                        setStatus('err', '⚠ ' + e.message);
+                    });
+            }
+
+            // Fire-and-forget metadata load. Failure is logged but doesn't
+            // gate the page : the operator can still see/edit users with
+            // the default labels. Reuses the same AbortSignal as refresh().
+            function refreshMetadata() {
+                // Reuse the in-flight controller signal (refresh() created it).
+                var signal = pageAbortController ? pageAbortController.signal : null;
+                var opts = signal ? { signal: signal } : {};
+                fetch('/api/v1/user-metadata/custom-fields', opts)
+                    .then(function (r) { return r.ok ? r.json() : {}; })
+                    .then(function (labels) {
+                        customFieldLabels = labels || {};
+                        // Patch the EDIT_FIELDS labels in-place so the
+                        // edit/create forms pick up the operator's naming.
+                        // Slot is empty ⇒ keep the default "Custom N" —
+                        // gives the operator a hint that the slot is available.
+                        EDIT_FIELDS.forEach(function (f) {
+                            if (f.key && f.key.indexOf('customField') === 0) {
+                                var configured = customFieldLabels[f.key];
+                                if (configured && configured.trim()) {
+                                    f.label = configured;
+                                }
+                            }
+                        });
+                    })
+                    .catch(function (e) {
+                        if (isAborted(e)) return;
+                        /* best-effort — silent on other errors */
+                    });
+                fetch('/api/v1/user-metadata/property-options', opts)
+                    .then(function (r) { return r.ok ? r.json() : {}; })
+                    .then(function (opts2) { propertyOptions = opts2 || {}; })
+                    .catch(function (e) {
+                        if (isAborted(e)) return;
+                        /* best-effort */
+                    });
+            }
+
+            // Initial cell rendering for the Validity column. userState 0 / 1
+            // → static cell ("no limit" / dimmed dash). For 2 / 3 / 4 we
+            // emit a "loading…" placeholder and kick off
+            // GET /api/v1/users/[uuid] after the table is in the DOM. The
+            // backing list endpoint (getuserlist2) doesn't return the
+            // dates per V17 p.4 — only getuser/[uuid] does. We can't
+            // reasonably block the table render on N getUser calls, so
+            // lazy enrichment it is. (Square brackets in this comment
+            // instead of curly because Qute parses { … } as expressions
+            // even inside JS comments.)
+            // i18n FR/EN/DE of the cell's static labels.
+            function initialValidityCell(u) {
+                if (u.userState === 0) return '<span style="color:var(--fg-dim);">' + t('users.validity.noLimit') + '</span>';
+                if (u.userState === 1) return '<span style="color:var(--fg-dim);">—</span>';
+                return '<span style="color:var(--fg-dim);">' + t('users.validity.loading') + '</span>';
+            }
+
+            // Humanise the validity window for the table cell based on
+            // userState + the dates carried by UserDetail. Same formatter
+            // (formatLoxoneEpoch) as the View tab → operator sees identical
+            // strings across both surfaces.
+            // i18n FR/EN/DE via t() with interpolation.
+            function formatValidity(detail) {
+                var s  = detail.userState;
+                var vu = formatLoxoneEpoch(detail.validUntil);
+                var vf = formatLoxoneEpoch(detail.validFrom);
+                if (s === 2) return t('users.validity.until', { date: vu });
+                if (s === 3) return t('users.validity.from',  { date: vf });
+                if (s === 4) return t('users.validity.range', { from: vf, to: vu });
+                return '—';
+            }
+
+            // Unified enrichment : fire ONE getUser/[uuid] per user
+            // (regardless of state) and broadcast the result to every
+            // surface that needs it :
+            //   - the user-row Validity cell (states 2/3/4)
+            //   - the user-row State chip background
+            //   - the Members chips in every group that has this user
+            //
+            // Single round of getUser amortises the cost : the Groups view
+            // needs ALL users for membership rendering, so we cover the
+            // full set in one pass instead of two.
+            //
+            // Returns a Promise so the caller (refresh path) can chain
+            // a finalize step that turns still-empty group cells into
+            // a "no members" placeholder.
+            var userDetailsCache = {};  // uuid → UserDetail
+
+            function enrichAllUsers(users, signal) {
+                userDetailsCache = {};
+                var promises = users.map(function (u) {
+                    return fetch('/api/v1/users/' + encodeURIComponent(u.uuid), { signal: signal })
+                        .then(handleJsonOrError)
+                        .then(function (detail) {
+                            userDetailsCache[u.uuid] = detail;
+                            applyUserEnrichment(u, detail);
+                        })
+                        .catch(function (e) {
+                            if (isAborted(e)) return;
+                            markUserEnrichmentFailed(u, e);
+                        });
+                });
+                return Promise.allSettled(promises);
+            }
+
+            function applyUserEnrichment(u, detail) {
+                var status = computeUserStatus(detail);
+                // Validity cell (state 2/3/4 only — others showed
+                // static "no limit" / "—" at initial render).
+                if (u.userState === 2 || u.userState === 3 || u.userState === 4) {
+                    var vcell = usersTbody.querySelector(
+                        'td.validity-cell[data-uuid="' + u.uuid + '"]');
+                    if (vcell) vcell.innerHTML = escapeHtml(formatValidity(detail));
+                }
+                // State chip — repaint per current status.
+                var trow = usersTbody.querySelector(
+                    'td.validity-cell[data-uuid="' + u.uuid + '"]');
+                trow = trow ? trow.closest('tr') : null;
+                if (trow) {
+                    var chip = trow.querySelector('.badge[class*="badge-state-"]');
+                    if (chip) {
+                        var bg = STATUS_BADGE[status.kind] || STATUS_BADGE.unknown;
+                        chip.style.background = bg.bg;
+                        chip.style.color      = bg.fg;
+                        chip.title            = status.text;
+                    }
+                }
+                // Append a member chip into each of this user's groups'
+                // Members cells. Colour reflects the status verdict
+                // (active/pending/expired/…).
+                (detail.userGroups || []).forEach(function (gUuid) {
+                    appendMemberChip(gUuid, detail, status);
+                });
+            }
+
+            function markUserEnrichmentFailed(u, error) {
+                // Validity cell — show '?' for time-bounded users.
+                if (u.userState === 2 || u.userState === 3 || u.userState === 4) {
+                    var vcell = usersTbody.querySelector(
+                        'td.validity-cell[data-uuid="' + u.uuid + '"]');
+                    if (vcell) {
+                        vcell.innerHTML = '<span style="color:var(--accent-down);" title="' +
+                                          escapeHtml(error.message) + '">?</span>';
+                    }
+                }
+                // Chip — paint as unknown so the operator notices both
+                // surfaces (cell + chip) are out of sync.
+                var trow = usersTbody.querySelector(
+                    'td.validity-cell[data-uuid="' + u.uuid + '"]');
+                trow = trow ? trow.closest('tr') : null;
+                if (trow) {
+                    var chip = trow.querySelector('.badge[class*="badge-state-"]');
+                    if (chip) {
+                        chip.style.background = STATUS_BADGE.unknown.bg;
+                        chip.style.color      = STATUS_BADGE.unknown.fg;
+                        chip.title            = 'Failed to load: ' + error.message;
+                    }
+                }
+                // Group membership unknown for this user — nothing to
+                // append. The Groups Members cells for groups this user
+                // would have belonged to stay empty for this round.
+            }
+
+            function appendMemberChip(groupUuid, detail, status) {
+                var container = groupsTbody.querySelector(
+                    'td.group-members-cell[data-uuid="' + groupUuid + '"] .user-chips');
+                if (!container) return;
+                // Drop a stale "no members" placeholder if finalize ran
+                // before this chip arrived (e.g. a language switch fired
+                // mid-enrichment) so we never show "no members" next to
+                // real member chips.
+                var placeholder = container.querySelector('em');
+                if (placeholder) placeholder.remove();
+                var bg = STATUS_BADGE[status.kind] || STATUS_BADGE.unknown;
+                var chip = document.createElement('span');
+                chip.className = 'user-chip';
+                chip.style.background = bg.bg;
+                chip.style.color      = bg.fg;
+                chip.title            = detail.name + ' — ' + status.text;
+                chip.textContent      = detail.name;
+                container.appendChild(chip);
+            }
+
+            // Repaint every enrichment-driven surface (Validity cell, State
+            // chip, group Member chips) from the in-memory userDetailsCache
+            // WITHOUT re-fetching from the Miniserver. Used on language
+            // change: renderUsers/renderGroups just rebuilt the tables with
+            // empty Member cells and "loading…" Validity cells, and this
+            // restores them synchronously from the last getUser round so the
+            // operator doesn't wait for the next 30s auto-refresh poll. Users
+            // not yet cached (a language switch fired mid-initial-load) are
+            // skipped here and still get painted when their in-flight getUser
+            // resolves.
+            function reapplyEnrichmentFromCache() {
+                allUsers.forEach(function (u) {
+                    var detail = userDetailsCache[u.uuid];
+                    if (detail) applyUserEnrichment(u, detail);
+                });
+            }
+
+            // Finalize Members cells once enrichment has settled. Two
+            // responsibilities :
+            //   1. Empty containers → "no members" placeholder so the
+            //      operator can tell "empty" from "still loading".
+            //   2. Non-empty containers → sort chips alphabetically by
+            //      the user name (chip textContent). Without this the
+            //      order is the order of resolution of the parallel
+            //      getUser fetches — non-deterministic and visually
+            //      unstable across refreshes.
+            //
+            // Sort uses localeCompare with sensitivity:'base' so the
+            // collation handles accented characters in operator-set
+            // user names (e.g. "Émilie" sorts next to "Emily" not at
+            // the end of the alphabet).
+            function finalizeEmptyGroupCells() {
+                groupsTbody.querySelectorAll(
+                    'td.group-members-cell .user-chips').forEach(function (container) {
+                    if (container.children.length === 0) {
+                        container.innerHTML =
+                            '<em style="color:var(--fg-dim);font-size:0.7rem;">' + t('users.noMembers') + '</em>';
+                        return;
+                    }
+                    // Alphabetical sort. Detach the chip nodes (preserves
+                    // their style/title attrs), sort by textContent,
+                    // re-append in order. Single DOM pass per cell.
+                    var chips = Array.from(container.querySelectorAll('.user-chip'));
+                    chips.sort(function (a, b) {
+                        return a.textContent.localeCompare(b.textContent,
+                                                           undefined,
+                                                           { sensitivity: 'base' });
+                    });
+                    chips.forEach(function (c) { container.appendChild(c); });
+                });
+            }
+
+            function renderUsers(users) {
+                usersCount.textContent = users.length;
+                usersTbody.innerHTML = '';
+                users.forEach(function (u) {
+                    var tr = document.createElement('tr');
+                    var stateBadge = '<span class="badge badge-state-' + u.userState + '">' +
+                                     (STATE_LABEL[u.userState] || ('state ' + u.userState)) + '</span>';
+                    var adminBadge = u.isAdmin
+                            ? '<span class="badge badge-admin">ADMIN</span>'
+                            : '<span style="color:var(--fg-dim);">-</span>';
+                    // Disable and Delete buttons. Shown on admins too, but
+                    // marked as "force" actions so the click handler can
+                    // fire a stronger 2-step confirm. Server-side, force=true
+                    // bypasses the admin-guard but the self-guard
+                    // (binding's own login) remains absolute.
+                    //
+                    // data-admin="true" → click handler will require
+                    // a name-retype confirm AND send ?force=true.
+                    var adminAttr = u.isAdmin ? ' data-admin="true"' : '';
+                    // Disable uses .btn-muted (grey, mirroring the "Disabled"
+                    // chip colour) to distinguish from Delete (.btn-danger
+                    // red). Same grey on the button and the resulting chip
+                    // → one glance after the click says "this row is in
+                    // the disabled state now".
+                    var disableBtn = (u.userState === 0)
+                            ? '<button class="btn-muted" data-action="disable" data-uuid="' +
+                              escapeHtml(u.uuid) + '" data-name="' + escapeHtml(u.name) + '"' +
+                              adminAttr + '>' + t('users.btn.disable') + '</button>'
+                            : '';
+                    var deleteBtn = '<button class="btn-danger" data-action="delete" data-uuid="' +
+                              escapeHtml(u.uuid) + '" data-name="' + escapeHtml(u.name) + '"' +
+                              adminAttr + '>' + t('users.btn.delete') + '</button>';
+                    // UUID column replaced by Validity. The td carries
+                    // the uuid as data so the unified enrichAllUsers()
+                    // can target it once the table is in the DOM.
+                    tr.innerHTML =
+                        '<td>' + escapeHtml(u.name) + '</td>' +
+                        '<td>' + adminBadge + '</td>' +
+                        '<td>' + stateBadge + '</td>' +
+                        '<td class="validity-cell" data-uuid="' + escapeHtml(u.uuid) + '">' +
+                            initialValidityCell(u) + '</td>' +
+                        '<td class="actions">' +
+                        '  <button data-action="view" data-uuid="' + escapeHtml(u.uuid) + '" data-name="' + escapeHtml(u.name) + '">' + t('users.btn.viewEdit') + '</button>' +
+                        '  ' + disableBtn +
+                        '  ' + deleteBtn +
+                        '</td>';
+                    usersTbody.appendChild(tr);
+                });
+                // Lazy enrichment lives in the refresh path (after BOTH
+                // renderUsers AND renderGroups have run) so that incoming
+                // user details can populate the Groups Members column at
+                // the same time as the user-row Validity cell + chip. See
+                // the refresh() then-block.
+                // Wire click handlers — branch by data-action.
+                usersTbody.querySelectorAll('button[data-action]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var action  = btn.getAttribute('data-action');
+                        var uuid    = btn.getAttribute('data-uuid');
+                        var name    = btn.getAttribute('data-name');
+                        var isAdmin = btn.getAttribute('data-admin') === 'true';
+                        if (action === 'view')    showDetail(uuid, name);
+                        if (action === 'disable') disableUser(uuid, name, isAdmin);
+                        if (action === 'delete')  deleteUser(uuid, name, isAdmin);
+                    });
+                });
+            }
+
+            function renderGroups(groups) {
+                groupsCount.textContent = groups.length;
+                groupsTbody.innerHTML = '';
+                groups.forEach(function (g) {
+                    var tr = document.createElement('tr');
+                    // UUID column replaced by Members. The cell starts
+                    // with an empty chip container ; chips are appended
+                    // as enrichAllUsers() resolves per user. After all
+                    // enrichments settle, empty cells get a "no members"
+                    // placeholder.
+                    tr.innerHTML =
+                        '<td>' + escapeHtml(g.name) + '</td>' +
+                        '<td>' + escapeHtml(g.descriptionOrEmpty) + '</td>' +
+                        '<td class="group-members-cell" data-uuid="' + escapeHtml(g.uuid) + '">' +
+                            '<div class="user-chips"></div>' +
+                        '</td>' +
+                        '<td class="actions">' +
+                        '  <button data-action="edit-group" data-uuid="' + escapeHtml(g.uuid) +
+                                '" data-name="' + escapeHtml(g.name) +
+                                '" data-desc="' + escapeHtml(g.descriptionOrEmpty) + '">' + t('users.btn.editGroup') + '</button>' +
+                        '  <button class="btn-danger" data-action="delete-group" data-uuid="' +
+                                escapeHtml(g.uuid) + '" data-name="' + escapeHtml(g.name) + '">' + t('users.btn.deleteGroup') + '</button>' +
+                        '</td>';
+                    groupsTbody.appendChild(tr);
+                });
+                // Wire Edit + Delete buttons per row.
+                groupsTbody.querySelectorAll('button[data-action]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var action = btn.getAttribute('data-action');
+                        var uuid   = btn.getAttribute('data-uuid');
+                        var name   = btn.getAttribute('data-name');
+                        var desc   = btn.getAttribute('data-desc') || '';
+                        if (action === 'edit-group')   openGroupModal('edit', uuid, name, desc);
+                        if (action === 'delete-group') deleteGroup(uuid, name);
+                    });
+                });
+            }
+
+            // ============================================================
+            //  Disable / Delete actions on a single row
+            // ============================================================
+
+            // When isAdmin=true, both disable and delete require an
+            // explicit force=true query param AND a stronger 2-step confirm
+            // with name-retype. The server-side guard refuses without
+            // force=true ; the UI just enforces a higher bar for clicking
+            // through (defense against accidental mass-disable scripts
+            // and operator typos).
+            //
+            // Self-guard (binding's own login) is NOT bypassable — the
+            // server refuses with a clear toast even if force=true.
+
+            function disableUser(uuid, name, isAdmin) {
+                var force = false;
+                if (isAdmin)
+                {
+                    // Step 1 : warn that this is an admin
+                    if (!confirm('⚠ Disable ADMINISTRATOR "' + name + '" ?\n\n' +
+                                 'This user has full Miniserver privileges. Disabling\n' +
+                                 'them removes their access immediately. Continue ?')) return;
+                    // Step 2 : retype the name to confirm
+                    var typed = prompt('To confirm, retype the user name exactly:\n\n' + name);
+                    if (typed !== name)
+                    {
+                        setStatus('err', '⚠ Name did not match — disable cancelled.');
+                        return;
+                    }
+                    force = true;
+                }
+                else
+                {
+                    if (!confirm('Disable user "' + name + '" ?\n\n' +
+                                 'This sets userState=1 on the Miniserver. The user will\n' +
+                                 'lose access immediately. The audit log records every call.')) return;
+                }
+
+                setStatus('', 'Disabling "' + name + '"' + (force ? ' (admin override)' : '') + '…');
+                var url = '/api/v1/users/' + encodeURIComponent(uuid) + '/disable'
+                        + (force ? '?force=true' : '');
+                fetch(url, { method: 'POST' })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Disabled "' + name + '"' +
+                                        (force ? ' (admin override — see audit.log)' : ' (userState=1)'));
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            // DELETE /api/v1/users/<uuid>, with admin override flow when
+            // isAdmin=true.
+            function deleteUser(uuid, name, isAdmin) {
+                var force = false;
+                if (isAdmin)
+                {
+                    if (!confirm('⚠ Delete ADMINISTRATOR "' + name + '" ?\n\n' +
+                                 'This user has full Miniserver privileges and the\n' +
+                                 'deletion is IRREVERSIBLE. Continue ?')) return;
+                    var typed = prompt('To confirm DELETION of admin "' + name +
+                                       '", retype the user name exactly:\n\n' + name);
+                    if (typed !== name)
+                    {
+                        setStatus('err', '⚠ Name did not match — delete cancelled.');
+                        return;
+                    }
+                    force = true;
+                }
+                else
+                {
+                    if (!confirm('Delete user "' + name + '" ?')) return;
+                    if (!confirm('⚠ This permanently removes the user from the Miniserver.\nProceed ?')) return;
+                }
+
+                setStatus('', 'Deleting "' + name + '"' + (force ? ' (admin override)' : '') + '…');
+                var url = '/api/v1/users/' + encodeURIComponent(uuid)
+                        + (force ? '?force=true' : '');
+                fetch(url, { method: 'DELETE' })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Deleted "' + name + '"' +
+                                        (force ? ' (admin override — see audit.log)' : ''));
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            // ============================================================
+            //  Detail / Edit / Groups modal
+            // ============================================================
+
+            function showDetail(uuid, name) {
+                currentDetailUuid = uuid;
+                currentDetailName = name;
+                currentDetailUser = null;
+                modalTitle.textContent = 'User: ' + name;
+                modalFields.innerHTML = '<dt>Loading…</dt><dd></dd>';
+                // Reset to View tab on every open + clear any auth inputs
+                // from a previous open (defense-in-depth — operator should
+                // never see a half-filled password field).
+                activateTab('view');
+                resetAuthInputs();
+                modal.classList.add('open');
+                fetch('/api/v1/users/' + encodeURIComponent(uuid))
+                    .then(handleJsonOrError)
+                    .then(function (u) {
+                        currentDetailUser = u;
+                        renderDetailView(u);
+                        renderEditForm(u);
+                        renderGroupsTab(u);
+                        renderNfcList(u);
+                    })
+                    .catch(function (e) {
+                        modalFields.innerHTML = '<dt>' + t('users.error.label') + '</dt><dd style="color:var(--accent-down);">' + escapeHtml(e.message) + '</dd>';
+                    });
+            }
+
+            // Clear the three auth-tab inputs. Called on every modal open
+            // and after every save so the next operator doesn't inherit a
+            // stale value.
+            function resetAuthInputs() {
+                ['auth-pw', 'auth-visu', 'auth-code'].forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el) el.value = '';
+                });
+            }
+
+            function activateTab(name) {
+                modalTabs.forEach(function (btn) {
+                    btn.classList.toggle('active', btn.getAttribute('data-tab') === name);
+                });
+                modal.querySelectorAll('.modal-tab-panel').forEach(function (panel) {
+                    panel.classList.toggle('active', panel.getAttribute('data-panel') === name);
+                });
+            }
+            modalTabs.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    activateTab(btn.getAttribute('data-tab'));
+                });
+            });
+
+            function renderDetailView(u) {
+                var html = '';
+                // Computed "Currently active" verdict that the operator can
+                // scan at a glance. Rendered as raw HTML (not escaped) so we
+                // can colour-code the badge. The text inside is escaped —
+                // only the wrapper span is HTML.
+                var status     = computeUserStatus(u);
+                var statusHtml = '<span style="color:' + STATUS_COLOR[status.kind] +
+                                 ';font-weight:600;">' + escapeHtml(status.text) + '</span>';
+                // Display order — most useful first.
+                var fields = [
+                    ['Name',          u.name],
+                    ['UUID',          u.uuid],
+                    ['State',         STATE_LABEL[u.userState] || ('state ' + u.userState)],
+                    ['Currently',     { __raw: statusHtml }],
+                    ['Admin',         u.isAdmin ? 'YES' : 'no'],
+                    ['Description',   u.desc],
+                    ['User ID',       u.userid],
+                    ['Email',         u.email],
+                    ['Phone',         u.phone],
+                    ['Firstname',     u.firstname],
+                    ['Lastname',      u.lastname],
+                    ['Company',       u.company],
+                    ['Department',    u.department],
+                    ['Personal no.',  u.personalno],
+                    ['Title',         u.title],
+                    ['Debitor',       u.debitor],
+                    ['Unique user ID', u.uniqueUserId]
+                ];
+                // Surface validUntil / validFrom / expirationAction in the
+                // View tab. These were already on the wire and parsed into
+                // UserDetail, but the read-only metadata pane never
+                // displayed them — the operator opened a user, saw no
+                // dates, and concluded the create had been silently dropped.
+                // The values are also in the Edit form, but that's a
+                // separate tab; the View tab is the default landing surface,
+                // so it has to show what was persisted.
+                //
+                // Rows are gated by APPLICABLE_STATES (the same map the
+                // Edit form uses, V17 p.14) so userState 0 / 1 stays
+                // visually clean — no row for an irrelevant attribute.
+                var state = (u.userState != null) ? Number(u.userState) : null;
+                // Valid from before Valid until (chronological order) —
+                // mirror of EDIT_FIELDS reorder.
+                if (state != null && APPLICABLE_STATES.validFrom.has(state)) {
+                    fields.push(['Valid from',        formatLoxoneEpoch(u.validFrom)]);
+                }
+                if (state != null && APPLICABLE_STATES.validUntil.has(state)) {
+                    fields.push(['Valid until',       formatLoxoneEpoch(u.validUntil)]);
+                }
+                if (state != null && APPLICABLE_STATES.expirationAction.has(state)) {
+                    var ea = u.expirationAction;
+                    fields.push(['Expiration action',
+                                 (ea != null && EXPIRATION_ACTION_LABEL[ea] != null)
+                                    ? EXPIRATION_ACTION_LABEL[ea] + ' (' + ea + ')'
+                                    : '-']);
+                }
+                fields.push(
+                    ['Custom 1',      u.customField1],
+                    ['Custom 2',      u.customField2],
+                    ['Custom 3',      u.customField3],
+                    ['Custom 4',      u.customField4],
+                    ['Custom 5',      u.customField5],
+                    ['Last edit',     u.lastedit ? new Date(u.lastedit * 1000).toISOString() : ''],
+                    ['Must change password', u.changePassword ? 'yes' : 'no'],
+                    ['NFC tags',      (u.nfcTags || []).join(', ') || '-']
+                );
+                fields.forEach(function (f) {
+                    // { __raw: '<span>…</span>' } bypasses escapeHtml so we
+                    // can colour-code the Current status. The inner text was
+                    // already escaped at the call site.
+                    var dd = (f[1] && typeof f[1] === 'object' && f[1].__raw != null)
+                                ? f[1].__raw
+                                : escapeHtml(f[1]);
+                    html += '<dt>' + escapeHtml(f[0]) + '</dt><dd>' + dd + '</dd>';
+                });
+                modalFields.innerHTML = html;
+            }
+
+            // Build the Edit form — one row per editable field. The form
+            // pre-fills from the current UserDetail, then on Save we send
+            // ONLY the changed fields (null otherwise) so we don't
+            // overwrite stuff the operator didn't touch.
+            function renderEditForm(u) {
+                editForm.innerHTML = EDIT_FIELDS.map(function (f) {
+                    var current = u[f.key];
+                    return formRow(f, current);
+                }).join('');
+                // Apply gating based on user's current state, and re-apply
+                // on every userState change so the picker updates live as
+                // operator switches state.
+                applyUserStateGating(editForm, u);
+                var stateSel = editForm.querySelector('[data-key="userState"]');
+                if (stateSel) {
+                    stateSel.addEventListener('change', function () {
+                        applyUserStateGating(editForm, u);
+                    });
+                }
+            }
+
+            function formRow(field, current) {
+                var id = 'edit-' + field.key;
+                var labelHtml = '<label for="' + id + '">' + escapeHtml(field.label) +
+                                (field.required ? ' *' : '') + '</label>';
+                if (field.type === 'bool') {
+                    var val = current === true ? 'true' : current === false ? 'false' : '';
+                    return '<div class="form-row">' + labelHtml +
+                        '<select id="' + id + '" data-key="' + field.key + '" data-type="bool">' +
+                        '<option value=""' + (val === '' ? ' selected' : '') + '>(unchanged)</option>' +
+                        '<option value="true"' + (val === 'true' ? ' selected' : '') + '>' + t('users.option.yes') + '</option>' +
+                        '<option value="false"' + (val === 'false' ? ' selected' : '') + '>' + t('users.option.no') + '</option>' +
+                        '</select></div>';
+                }
+                if (field.type === 'state') {
+                    var v = (current != null) ? String(current) : '';
+                    return '<div class="form-row">' + labelHtml +
+                        '<select id="' + id + '" data-key="' + field.key + '" data-type="number">' +
+                        '<option value=""' + (v === '' ? ' selected' : '') + '>(unchanged)</option>' +
+                        '<option value="0"' + (v === '0' ? ' selected' : '') + '>0 — Active</option>' +
+                        '<option value="1"' + (v === '1' ? ' selected' : '') + '>1 — Disabled</option>' +
+                        '<option value="2"' + (v === '2' ? ' selected' : '') + '>2 — Enabled until</option>' +
+                        '<option value="3"' + (v === '3' ? ' selected' : '') + '>3 — Enabled from</option>' +
+                        '<option value="4"' + (v === '4' ? ' selected' : '') + '>4 — Timespan</option>' +
+                        '</select></div>';
+                }
+                if (field.type === 'action') {
+                    var va = (current != null) ? String(current) : '';
+                    return '<div class="form-row">' + labelHtml +
+                        '<select id="' + id + '" data-key="' + field.key + '" data-type="number">' +
+                        '<option value=""' + (va === '' ? ' selected' : '') + '>(unchanged)</option>' +
+                        '<option value="0"' + (va === '0' ? ' selected' : '') + '>0 — Deactivate</option>' +
+                        '<option value="1"' + (va === '1' ? ' selected' : '') + '>1 — Delete</option>' +
+                        '</select></div>';
+                }
+                if (field.type === 'number') {
+                    var n = (current != null && current !== 0) ? String(current) : '';
+                    return '<div class="form-row">' + labelHtml +
+                        '<input type="number" id="' + id + '" data-key="' + field.key +
+                        '" data-type="number" value="' + escapeHtml(n) + '" placeholder="(unchanged)"></div>';
+                }
+                if (field.type === 'epoch') {
+                    // Operator-friendly date picker for Loxone epoch fields
+                    // (validUntil / validFrom). Stores epoch as a data-orig
+                    // attribute so buildEditPatch can detect "unchanged"
+                    // without re-parsing the input.
+                    var dtVal = loxoneEpochToDatetimeLocal(current);
+                    var origAttr = (current == null) ? '' : String(current);
+                    return '<div class="form-row">' + labelHtml +
+                        '<input type="datetime-local" id="' + id + '" data-key="' + field.key +
+                        '" data-type="epoch" data-orig="' + escapeHtml(origAttr) +
+                        '" value="' + escapeHtml(dtVal) + '"></div>';
+                }
+                // default = text
+                // NB: avoid shadowing the global `t()` i18n function — JS
+                // var-hoisting would make every `t(key)` call earlier in
+                // this function fail with "t is not a function".
+                var txt = current == null ? '' : String(current);
+                return '<div class="form-row">' + labelHtml +
+                    '<input type="text" id="' + id + '" data-key="' + field.key +
+                    '" data-type="text" value="' + escapeHtml(txt) + '"></div>';
+            }
+
+            // Serialize the Edit form into an EditUserRequest body. The
+            // current logic for a "changed" field is :
+            //   - text   : if the new value differs from the original
+            //              (empty string still counts as a change if the
+            //              original was non-empty — operator may want to
+            //              CLEAR a field).
+            //   - number : if the input has a value (empty = unchanged).
+            //   - bool   : if the select has a non-empty value.
+            // This matches the patch semantics : only non-null fields
+            // are forwarded server-side.
+            function buildEditPatch(originalUser) {
+                var patch = {};
+                editForm.querySelectorAll('[data-key]').forEach(function (el) {
+                    var key  = el.getAttribute('data-key');
+                    var type = el.getAttribute('data-type');
+                    var orig = originalUser[key];
+                    // Skip rows hidden by userState gating. Even if the
+                    // operator typed a date before changing userState, we
+                    // don't want to send it (Miniserver would ignore it
+                    // silently anyway, but cleaner not to send irrelevant
+                    // fields).
+                    if (isRowHidden(el)) return;
+                    if (type === 'bool') {
+                        if (el.value === 'true')  patch[key] = true;
+                        else if (el.value === 'false') patch[key] = false;
+                    } else if (type === 'number') {
+                        if (el.value !== '') patch[key] = Number(el.value);
+                    } else if (type === 'epoch') {
+                        // Diff against the stored original epoch. Cleared
+                        // input + originally-set epoch → patch with 0
+                        // (Loxone's "no validity constraint" sentinel).
+                        // Original-unset + cleared input → unchanged, skip.
+                        var origEpoch = el.getAttribute('data-orig');
+                        var newEpoch  = datetimeLocalToLoxoneEpoch(el.value);
+                        if (el.value === '') {
+                            if (origEpoch && origEpoch !== '' && origEpoch !== '0') {
+                                patch[key] = 0;
+                            }
+                        } else if (newEpoch != null && String(newEpoch) !== origEpoch) {
+                            patch[key] = newEpoch;
+                        }
+                    } else {
+                        // text
+                        var newVal = el.value;
+                        var origVal = orig == null ? '' : String(orig);
+                        if (newVal !== origVal) patch[key] = newVal;
+                    }
+                });
+                return patch;
+            }
+
+            editSave.addEventListener('click', function () {
+                if (!currentDetailUuid || !currentDetailUser) return;
+                var patch = buildEditPatch(currentDetailUser);
+                if (Object.keys(patch).length === 0) {
+                    setStatus('', 'No changes to save.');
+                    return;
+                }
+                setStatus('', 'Saving "' + currentDetailName + '"…');
+                fetch('/api/v1/users/' + encodeURIComponent(currentDetailUuid), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(patch)
+                    })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Edited "' + currentDetailName + '" (' + Object.keys(patch).join(', ') + ')');
+                        // Refresh the table AND re-open the modal so the
+                        // operator sees the new state without losing
+                        // their place.
+                        refresh();
+                        showDetail(currentDetailUuid, patch.name || currentDetailName);
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            });
+
+            // ============================================================
+            //  Groups tab
+            // ============================================================
+
+            function renderGroupsTab(u) {
+                groupsSection.innerHTML = renderGroupsBlock(u.uuid, u.userGroups || []);
+                wireGroupsSection(u.uuid);
+            }
+
+            function renderGroupsBlock(userUuid, userGroupUuids) {
+                var pills = userGroupUuids.map(function (gUuid) {
+                    var g = allGroupsByUuid[gUuid] || { uuid: gUuid, name: gUuid };
+                    return '<span class="group-pill">' + escapeHtml(g.name) +
+                           ' <button type="button" title="' + t('users.btn.removeFromGroup') + '" ' +
+                           'data-action="remove-group" data-user="' + escapeHtml(userUuid) +
+                           '" data-group="' + escapeHtml(g.uuid) +
+                           '" data-name="' + escapeHtml(g.name) + '">×</button></span>';
+                }).join('');
+
+                var assignedSet = {};
+                userGroupUuids.forEach(function (gu) { assignedSet[gu] = true; });
+                var unassigned = allGroups.filter(function (g) { return !assignedSet[g.uuid]; });
+
+                var addRow = '';
+                if (unassigned.length > 0) {
+                    addRow = '<div class="group-add-row">' +
+                             '<select id="add-group-select">' +
+                             unassigned.map(function (g) {
+                                 return '<option value="' + escapeHtml(g.uuid) + '">' + escapeHtml(g.name) + '</option>';
+                             }).join('') +
+                             '</select>' +
+                             '<button type="button" data-action="add-group" ' +
+                             'data-user="' + escapeHtml(userUuid) + '">+ Assign to group</button>' +
+                             '</div>';
+                }
+
+                return '<div class="modal-section-title">' + t('users.section.groups') + '</div>' +
+                       '<div class="group-pills">' +
+                       (pills || '<em style="color:var(--fg-dim);">—</em>') +
+                       '</div>' + addRow;
+            }
+
+            function wireGroupsSection(userUuid) {
+                groupsSection.querySelectorAll('button[data-action="remove-group"]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        var groupUuid = btn.getAttribute('data-group');
+                        var groupName = btn.getAttribute('data-name');
+                        removeFromGroup(userUuid, groupUuid, groupName);
+                    });
+                });
+                var addBtn = groupsSection.querySelector('button[data-action="add-group"]');
+                if (addBtn) {
+                    addBtn.addEventListener('click', function () {
+                        var sel = document.getElementById('add-group-select');
+                        if (!sel || !sel.value) return;
+                        addToGroup(userUuid, sel.value, sel.options[sel.selectedIndex].textContent);
+                    });
+                }
+            }
+
+            function addToGroup(userUuid, groupUuid, groupName) {
+                setStatus('', 'Adding to group "' + groupName + '"…');
+                fetch('/api/v1/users/' + encodeURIComponent(userUuid) +
+                      '/groups/' + encodeURIComponent(groupUuid), { method: 'POST' })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Added to "' + groupName + '"');
+                        // Refresh the modal (group pills inside the user
+                        // detail) AND the background tables so the new chip
+                        // appears in the Groups Members column without
+                        // manual page-refresh. showDetail's fetch has no
+                        // abort signal so it races safely with refresh() —
+                        // both complete, modal stays open with updated
+                        // content.
+                        showDetail(currentDetailUuid, currentDetailName);
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            function removeFromGroup(userUuid, groupUuid, groupName) {
+                if (!confirm('Remove user from group "' + groupName + '" ?')) return;
+                setStatus('', 'Removing from group "' + groupName + '"…');
+                fetch('/api/v1/users/' + encodeURIComponent(userUuid) +
+                      '/groups/' + encodeURIComponent(groupUuid), { method: 'DELETE' })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Removed from "' + groupName + '"');
+                        // Same as addToGroup : also refresh the background
+                        // Groups table so the removed chip disappears
+                        // immediately.
+                        showDetail(currentDetailUuid, currentDetailName);
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            // ============================================================
+            //  Create user modal
+            // ============================================================
+
+            openCreate.addEventListener('click', function () {
+                // Build the create form on demand — same field set as
+                // edit, but starting empty.
+                createForm.innerHTML = EDIT_FIELDS.map(function (f) {
+                    return formRow(f, null);
+                }).join('');
+                // Gate validUntil/validFrom/expirationAction on userState
+                // (live, on each change). originalUser=null for create →
+                // effectiveUserState falls through to the picked value
+                // or null (show all initially).
+                applyUserStateGating(createForm, null);
+                var createStateSel = createForm.querySelector('[data-key="userState"]');
+                if (createStateSel) {
+                    createStateSel.addEventListener('change', function () {
+                        applyUserStateGating(createForm, null);
+                    });
+                }
+                createModal.classList.add('open');
+                var nameInput = document.getElementById('edit-name');
+                if (nameInput) {
+                    // Both forms use the same id prefix "edit-" — when
+                    // both modals are open this would clash. Since they
+                    // are mutually exclusive in the UX, focus the right
+                    // one : the *last* matching element (= the one in
+                    // the create form, since it's just been injected
+                    // below the edit form).
+                    var inputs = document.querySelectorAll('#edit-name');
+                    inputs[inputs.length - 1].focus();
+                }
+            });
+
+            createCancel.addEventListener('click', function () {
+                createModal.classList.remove('open');
+            });
+
+            createSubmit.addEventListener('click', function () {
+                // Build payload from the create form. The
+                // EditUserRequest body's name is required ; everything
+                // else is optional. Server-side guards reject blank
+                // name.
+                var payload = {};
+                createForm.querySelectorAll('[data-key]').forEach(function (el) {
+                    var key  = el.getAttribute('data-key');
+                    var type = el.getAttribute('data-type');
+                    // Skip rows hidden by userState gating.
+                    if (isRowHidden(el)) return;
+                    if (type === 'bool') {
+                        if (el.value === 'true')  payload[key] = true;
+                        else if (el.value === 'false') payload[key] = false;
+                    } else if (type === 'number') {
+                        if (el.value !== '') payload[key] = Number(el.value);
+                    } else if (type === 'epoch') {
+                        // Same Loxone-epoch conversion as the edit modal.
+                        // Create path has no "original" to diff against, so
+                        // any non-empty input becomes the value.
+                        var ep = datetimeLocalToLoxoneEpoch(el.value);
+                        if (ep != null) payload[key] = ep;
+                    } else if (el.value !== '') {
+                        payload[key] = el.value;
+                    }
+                });
+                if (!payload.name || !payload.name.trim()) {
+                    setStatus('err', '⚠ Name is required.');
+                    return;
+                }
+                setStatus('', 'Creating "' + payload.name + '"…');
+                fetch('/api/v1/users', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(handleJsonOrError)
+                    .then(function (created) {
+                        setStatus('ok', '✓ Created "' + (created.name || payload.name) + '" (uuid=' + created.uuid + ')');
+                        createModal.classList.remove('open');
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            });
+
+            createModal.addEventListener('click', function (ev) {
+                if (ev.target === createModal) createModal.classList.remove('open');
+            });
+
+            // ============================================================
+            //  Auth tab — password / visu / access code
+            // ============================================================
+
+            // Generic auth-op submitter — endpoint is one of
+            // 'password' / 'visu-password' / 'access-code'. The
+            // payload body shape is always &lt;value&gt;:string. The toast
+            // surfaces server-side validation errors (e.g. self-guard
+            // refusal, code-not-numeric).
+            function submitAuthOp(endpoint, inputId, opLabel) {
+                var el  = document.getElementById(inputId);
+                var val = el ? el.value : '';
+                if (!val || !val.trim()) {
+                    setStatus('err', '⚠ ' + opLabel + ' cannot be empty.');
+                    return;
+                }
+                if (!currentDetailUuid) {
+                    setStatus('err', '⚠ No user selected.');
+                    return;
+                }
+                if (!confirm('Update ' + opLabel + ' for "' + currentDetailName + '" ?')) return;
+
+                setStatus('', 'Updating ' + opLabel + ' for "' + currentDetailName + '"…');
+                fetch('/api/v1/users/' + encodeURIComponent(currentDetailUuid) + '/auth/' + endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ value: val })
+                    })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ ' + opLabel + ' updated for "' + currentDetailName + '"');
+                        // Clear the input immediately — defense against
+                        // shoulder-surfing + accidental double-submit.
+                        if (el) el.value = '';
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            document.getElementById('auth-pw-save').addEventListener('click', function () {
+                submitAuthOp('password', 'auth-pw', 'password');
+            });
+            document.getElementById('auth-visu-save').addEventListener('click', function () {
+                submitAuthOp('visu-password', 'auth-visu', 'visu password');
+            });
+            document.getElementById('auth-code-save').addEventListener('click', function () {
+                submitAuthOp('access-code', 'auth-code', 'access code');
+            });
+
+            // ============================================================
+            //  NFC tab — assigned tags + discover + add
+            // ============================================================
+
+            // Render the list of currently-assigned tags on the user.
+            // The Miniserver's UserDetail.nfcTags is just a List<String>
+            // of tag UIDs (no friendly name kept on the binding side),
+            // so the pill UI shows the UID + a remove button.
+            function renderNfcList(u) {
+                var listEl = document.getElementById('nfc-tags-list');
+                if (!listEl) return;
+                var tags = u.nfcTags || [];
+                if (tags.length === 0) {
+                    listEl.innerHTML = '<em style="color:var(--fg-dim);">No tags assigned.</em>';
+                    return;
+                }
+                listEl.innerHTML = '<div class="group-pills">' +
+                        tags.map(function (tag) {
+                            // Param renamed "tag" so it doesn't shadow the
+                            // global t() function from i18n.js.
+                            return '<span class="group-pill">' + escapeHtml(tag) +
+                                   ' <button type="button" title="' + t('users.btn.removeTag') + '" ' +
+                                   'data-action="nfc-remove" data-tag="' + escapeHtml(tag) + '">' +
+                                   '×</button></span>';
+                        }).join('') + '</div>';
+                listEl.querySelectorAll('button[data-action="nfc-remove"]').forEach(function (btn) {
+                    btn.addEventListener('click', function () {
+                        removeNfcTag(currentDetailUuid, btn.getAttribute('data-tag'));
+                    });
+                });
+            }
+
+            // Discover : asks the Miniserver to surface the next tap.
+            // Blocking on the binding side (HTTP request waits up to
+            // ~60 s) — UI surfaces a spinner via the discoverBtn label.
+            document.getElementById('nfc-discover').addEventListener('click', function () {
+                var btn   = document.getElementById('nfc-discover');
+                var input = document.getElementById('nfc-tag-id');
+                btn.disabled = true;
+                btn.textContent = 'Listening… tap a tag';
+                setStatus('', 'Listening for NFC tap (up to 60 s)…');
+                fetch('/api/v1/nfc/discover', { method: 'POST' })
+                    .then(handleJsonOrError)
+                    .then(function (res) {
+                        if (res && res.tagId) {
+                            input.value = res.tagId;
+                            setStatus('ok', '✓ Discovered tag: ' + res.tagId);
+                        } else {
+                            setStatus('err', '⚠ No tag tapped (timeout).');
+                        }
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); })
+                    .finally(function () {
+                        btn.disabled = false;
+                        btn.textContent = 'Discover (tap a tag)';
+                    });
+            });
+
+            // Add : POST /api/v1/users/&lt;uuid&gt;/nfc with the tagId+name body.
+            // Refreshes the modal on success (showDetail re-fetches the
+            // UserDetail) so the new tag pill appears.
+            document.getElementById('nfc-add').addEventListener('click', function () {
+                if (!currentDetailUuid) {
+                    setStatus('err', '⚠ No user selected.');
+                    return;
+                }
+                var tagInput  = document.getElementById('nfc-tag-id');
+                var nameInput = document.getElementById('nfc-tag-name');
+                var tagId     = tagInput.value.trim();
+                var name      = nameInput.value.trim();
+                if (!tagId) {
+                    setStatus('err', '⚠ Tag UID is required.');
+                    return;
+                }
+
+                setStatus('', 'Adding NFC tag ' + tagId + '…');
+                fetch('/api/v1/users/' + encodeURIComponent(currentDetailUuid) + '/nfc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tagId: tagId, name: name })
+                    })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Added tag ' + tagId);
+                        tagInput.value = '';
+                        nameInput.value = '';
+                        // Re-fetch the user detail so the assigned-tags
+                        // list reflects the new tag without closing the
+                        // modal.
+                        showDetail(currentDetailUuid, currentDetailName);
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            });
+
+            // Remove : DELETE /api/v1/users/&lt;uuid&gt;/nfc/&lt;tagId&gt;.
+            function removeNfcTag(uuid, tagId) {
+                if (!confirm('Remove NFC tag "' + tagId + '" from this user ?')) return;
+                setStatus('', 'Removing tag ' + tagId + '…');
+                fetch('/api/v1/users/' + encodeURIComponent(uuid) +
+                      '/nfc/' + encodeURIComponent(tagId), { method: 'DELETE' })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Removed tag ' + tagId);
+                        showDetail(currentDetailUuid, currentDetailName);
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            // ============================================================
+            //  Group CRUD
+            // ============================================================
+
+            // openGroupModal — same modal for create and edit, mode
+            // disambiguated via the modal's data-mode attribute. The
+            // edit pre-fills name + description from the row dataset
+            // (avoids an extra getgroup/&lt;uuid&gt; round-trip since
+            // getgrouplist already returned these).
+            function openGroupModal(mode, uuid, name, desc) {
+                var modalEl    = document.getElementById('group-modal');
+                var titleEl    = document.getElementById('group-modal-title');
+                var nameInput  = document.getElementById('group-name');
+                var descInput  = document.getElementById('group-description');
+
+                modalEl.dataset.mode = mode;
+                modalEl.dataset.uuid = uuid || '';
+                modalEl.dataset.originalName = name || '';
+                modalEl.dataset.originalDesc = desc || '';
+                titleEl.textContent = mode === 'edit' ? 'Edit group: ' + name : 'Create group';
+                nameInput.value = name || '';
+                descInput.value = desc || '';
+                modalEl.classList.add('open');
+                nameInput.focus();
+            }
+
+            function closeGroupModal() {
+                document.getElementById('group-modal').classList.remove('open');
+            }
+
+            document.getElementById('open-create-group').addEventListener('click', function () {
+                openGroupModal('create', '', '', '');
+            });
+            document.getElementById('group-cancel').addEventListener('click', closeGroupModal);
+            document.getElementById('group-modal').addEventListener('click', function (ev) {
+                if (ev.target.id === 'group-modal') closeGroupModal();
+            });
+
+            document.getElementById('group-save').addEventListener('click', function () {
+                var modalEl   = document.getElementById('group-modal');
+                var mode      = modalEl.dataset.mode;
+                var uuid      = modalEl.dataset.uuid;
+                var origName  = modalEl.dataset.originalName;
+                var origDesc  = modalEl.dataset.originalDesc;
+                var newName   = document.getElementById('group-name').value.trim();
+                var newDesc   = document.getElementById('group-description').value;
+
+                if (!newName) {
+                    setStatus('err', '⚠ Group name is required.');
+                    return;
+                }
+
+                if (mode === 'create') {
+                    setStatus('', 'Creating group "' + newName + '"…');
+                    fetch('/api/v1/groups', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: newName, description: newDesc || null })
+                        })
+                        .then(handleJsonOrError)
+                        .then(function (created) {
+                            setStatus('ok', '✓ Created group "' + (created.name || newName) +
+                                            '" (uuid=' + created.uuid + ')');
+                            closeGroupModal();
+                            refresh();
+                        })
+                        .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+                    return;
+                }
+
+                // edit — build a patch with ONLY the changed fields
+                // (mirror the server-side semantics: null = don't
+                // touch). If nothing changed, we skip the call.
+                var patch = {};
+                if (newName !== origName)               patch.name        = newName;
+                if (newDesc !== origDesc)               patch.description = newDesc;
+                if (Object.keys(patch).length === 0) {
+                    setStatus('', 'No changes to save.');
+                    closeGroupModal();
+                    return;
+                }
+
+                setStatus('', 'Saving group "' + (newName || origName) + '"…');
+                fetch('/api/v1/groups/' + encodeURIComponent(uuid), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(patch)
+                    })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Group "' + (newName || origName) + '" updated (' +
+                                        Object.keys(patch).join(', ') + ')');
+                        closeGroupModal();
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            });
+
+            // deleteGroup — 2-step confirm because irreversible AND
+            // affects all users that were members of the group. The
+            // Miniserver enforces the "you can't delete a system group"
+            // rule server-side ; if so, we surface the Code=4xx via
+            // the toast.
+            function deleteGroup(uuid, name) {
+                if (!confirm('Delete group "' + name + '" ?\n\n' +
+                             'Users that were members lose the permissions this group conveyed,\n' +
+                             'but the users themselves are NOT deleted.')) return;
+                if (!confirm('⚠ This permanently removes the group "' + name +
+                             '" from the Miniserver. Proceed ?')) return;
+
+                setStatus('', 'Deleting group "' + name + '"…');
+                fetch('/api/v1/groups/' + encodeURIComponent(uuid), { method: 'DELETE' })
+                    .then(handleJsonOrError)
+                    .then(function () {
+                        setStatus('ok', '✓ Deleted group "' + name + '"');
+                        refresh();
+                    })
+                    .catch(function (e) { setStatus('err', '⚠ ' + e.message); });
+            }
+
+            // ============================================================
+            //  Shared helpers
+            // ============================================================
+
+            // Parse the JSON body if ok ; otherwise throw with the
+            // server-side message so the .catch() can render it.
+            function handleJsonOrError(r) {
+                if (r.ok) return r.json().catch(function () { return {}; });
+                return r.json()
+                    .catch(function () { return {}; })
+                    .then(function (j) { throw new Error(j.message || ('HTTP ' + r.status)); });
+            }
+
+            function closeModal() {
+                modal.classList.remove('open');
+                currentDetailUuid = null;
+                currentDetailName = '';
+                currentDetailUser = null;
+                // Clear auth inputs on close so a password typed by mistake
+                // never lives past the modal session.
+                resetAuthInputs();
+            }
+            modalClose.addEventListener('click', closeModal);
+            modal.addEventListener('click', function (ev) {
+                if (ev.target === modal) closeModal();
+            });
+            document.addEventListener('keydown', function (ev) {
+                if (ev.key === 'Escape') {
+                    closeModal();
+                    createModal.classList.remove('open');
+                    closeGroupModal();
+                }
+            });
+
+            // ============================================================
+            //  Refresh controls : manual button + auto-tick
+            // ============================================================
+
+            // 30s tick. Long enough that the binding's admin command
+            // semaphore and the browser's parallel-fetch limit (~6) don't
+            // pile up requests, short enough that a chip flipping
+            // active → expired surfaces while the operator is still
+            // looking.
+            var AUTO_REFRESH_INTERVAL_MS = 30000;
+            var autoRefreshIntervalId    = null;
+
+            function isAnyModalOpen() {
+                // Pause auto-refresh while the operator has any modal
+                // open — refresh() would rerender background tables (no
+                // user impact) but worst-case the modal-driven
+                // showDetail / openCreate / openGroup paths could race
+                // with table-rebuild. Cheaper to skip the tick.
+                return (modal       && modal.classList.contains('open'))
+                    || (createModal && createModal.classList.contains('open'))
+                    || (groupModal  && groupModal.classList.contains('open'));
+            }
+
+            function startAutoRefresh() {
+                stopAutoRefresh();
+                autoRefreshIntervalId = setInterval(function () {
+                    if (isAnyModalOpen()) return;
+                    refresh();
+                }, AUTO_REFRESH_INTERVAL_MS);
+            }
+
+            function stopAutoRefresh() {
+                if (autoRefreshIntervalId != null) {
+                    clearInterval(autoRefreshIntervalId);
+                    autoRefreshIntervalId = null;
+                }
+            }
+
+            // Manual refresh button — always fires immediately, no
+            // pause-on-modal check (the operator explicitly asked).
+            refreshNowBtn.addEventListener('click', function () { refresh(); });
+
+            // Auto-refresh toggle : checked by default. Persists for
+            // the current session only (not localStorage — avoids one
+            // operator's preference leaking to another).
+            autoRefreshToggle.addEventListener('change', function (e) {
+                if (e.target.checked) startAutoRefresh();
+                else                  stopAutoRefresh();
+            });
+
+            // Stop the interval on pagehide — pageAbortController already
+            // handles in-flight fetch aborts, this is the timer counterpart.
+            window.addEventListener('pagehide', stopAutoRefresh);
+
+            // Initial load — users/groups synchronously, metadata
+            // fire-and-forget. The metadata fetch is best-effort
+            // (custom-field labels + property options) so a partial
+            // failure doesn't gate the rest of the page.
+            refresh();
+            refreshMetadata();
+            if (autoRefreshToggle.checked) startAutoRefresh();
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,742 @@
+# ============================================================================
+# loxmq — base configuration (Quarkus rewrite)
+#
+# Holds the SHAPE of the configuration and the defaults that are safe across
+# environments. Profile-specific overrides live in:
+#
+#   application-dev.yml        — local dev box
+#   application-staging.yml    — staging miniserver / broker
+#   application-prod.yml       — production
+#
+# Activate a profile with:
+#   mvn quarkus:dev                                 # implicitly: dev
+#   java -Dquarkus.profile=staging -jar ...         # staging
+#   java -Dquarkus.profile=prod -jar ...            # production
+#
+# Secrets (broker password, keystore password) MUST NOT be committed. Use
+# environment variables (uppercased + dotted-to-underscore replacement),
+# e.g. LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD=<value>.
+#
+# All protocol-stable defaults (jdev/... command stems, AES/RSA algorithm
+# names) are baked into LoxoneConfig via @WithDefault — they do NOT appear
+# here. Only operator-tunable values are exposed.
+#
+# Time units — TWO distinct ISO-8601 representations are used below:
+#   • Durations (timeouts, intervals, delays, TTLs) use the ISO-8601 duration
+#     format "PnDTnHnMnS", exactly as accepted by java.time.Duration.parse():
+#     the leading `P` is the period designator and `T` separates the day part
+#     from the time part. Examples used in this file:
+#         PT0S = zero        PT1S  = 1 second    PT3S  = 3 seconds
+#         PT15S = 15 seconds PT30S = 30 seconds  PT2M  = 2 minutes
+#         PT60S = 60 seconds PT1H  = 1 hour      PT2H  = 2 hours
+#         PT24H = 24 hours   P7D   = 7 days
+#     java.time.Duration accepts days/hours/minutes/seconds ONLY — never
+#     weeks, months or years.
+#   • Time-of-day values (e.g. the daily token refresh `delay-time`) use the
+#     ISO-8601 extended local-time format "HH:mm:ss", parsed by
+#     java.time.LocalTime.
+# ============================================================================
+
+quarkus:
+  application:
+    name: loxmq
+
+  # ArC bean discovery — exclude the SmallRye Reactive Messaging MQTT
+  # connectors bundled by `quarkus-hivemq-client`. We don't use the
+  # reactive-messaging stream abstraction (we drive HiveMQ via the builder
+  # API directly). Two beans must be excluded:
+  #
+  #   1. io.quarkiverse.hivemqclient.smallrye.reactive.HiveMQMqttConnector
+  #      — the HiveMQ-specific connector shipped by the Quarkiverse extension.
+  #
+  #   2. io.smallrye.reactive.messaging.mqtt.MqttConnector
+  #      — the GENERIC connector from smallrye-reactive-messaging-mqtt
+  #      (transitive). Surfaces when ApplicationSmokeIT is launched from
+  #      IntelliJ (which defaults to prod profile) and the boot-fail
+  #      shutdown path tries to fire its @Destroyed(ApplicationScoped)
+  #      observer → ExecutionHolder → Vertx (RUNTIME_INIT synthetic) →
+  #      "must not be accessed during STATIC_INIT".
+  #
+  # Both classes are @Observes @Destroyed beans — they only crash on the
+  # shutdown event path, but ArC validates the observer wiring at boot, so
+  # they're discovered regardless of whether anyone fires events to them.
+  # Both must be excluded for the binding to be robust under any boot
+  # failure mode (TLS cert missing, miniserver unreachable, etc.).
+  arc:
+    exclude-types: io.quarkiverse.hivemqclient.smallrye.reactive.HiveMQMqttConnector,io.smallrye.reactive.messaging.mqtt.MqttConnector
+
+  # HTTP server — management API + dashboard + health + metrics + Swagger UI.
+  # TLS settings live in the staging/prod profile overlays (cert paths cannot
+  # be left as the empty string in the base config).
+  http:
+    host: 0.0.0.0
+    port: 8080
+    ssl-port: 8443
+    insecure-requests: enabled
+    root-path: /
+    cors:
+      enabled: false
+    limits:
+      max-body-size: 128K
+
+  # OpenTelemetry — off by default. Operator opts in via
+  #   QUARKUS_OTEL_SDK_DISABLED=false
+  # and points at an OTLP collector.
+  otel:
+    sdk:
+      disabled: true
+
+  # Health, metrics, OpenAPI
+  smallrye-health:
+    root-path: /q/health
+    liveness-path: live
+    readiness-path: ready
+
+  micrometer:
+    export:
+      prometheus:
+        path: /q/metrics
+    binder:
+      http-server:
+        enabled: true
+      jvm: true
+
+  smallrye-openapi:
+    path: /q/openapi
+
+  swagger-ui:
+    path: /q/swagger-ui
+
+  # Logging
+  #
+  # The console handler is OUR OWN — Quarkus's default is disabled and we
+  # install LoxmqConsoleFormatter via LoggingProducers#loxmqConsoleHandler.
+  # See util/logging/LoxmqConsoleFormatter.java for the visual layout
+  # (xterm-256 palette per field, per-level emoji separators + wrappers,
+  # verbose method+line on DEBUG/TRACE only).
+  #
+  # The file handler IS Quarkus's built-in — we just configure its path
+  # and pattern. File logs are plain text (no ANSI) so they grep cleanly.
+  #
+  # Per-package levels:
+  #   com.quaddan.…transport.*       DEBUG   (per-publish "🚂 …" lines)
+  #   com.hivemq.client.*                INFO    (TRACE is ultra-chatty)
+  #   everything under com.quaddan   INFO
+  #   Quarkus / Netty defaults stay quiet.
+  log:
+    level: INFO
+
+    # Console handler — Quarkus enables it by default (no explicit
+    # quarkus.log.console.enable needed — that property is deprecated
+    # since Quarkus 3.35). LoggingProducers (@Startup CDI bean) swaps the
+    # formatter at boot to LoxmqConsoleFormatter. The first ~150ms of
+    # boot lines use Quarkus's default format; everything from "Installed
+    # LoxmqConsoleFormatter…" onwards uses ours.
+
+    # File handler — plain text, no ANSI. Path resolved via ${LOG_DIR:logs}
+    # + fixed filename `application.log`. Rotation by size: 20 MB per file × 30 backups.
+    #
+    # IMPORTANT — `quarkus.log.file.enabled=true` is MANDATORY (default `false`).
+    # Between Quarkus 3.20 LTS and 3.27 the property was renamed `enable` →
+    # `enabled` (with trailing d); the "deprecated" WARN we observed
+    # signalled the rename, not auto-activation. Without this flag, no
+    # `logs/…log` file is produced.
+    #
+    # Path resolved via ${LOG_DIR:logs} to cover the dev vs prod divergence:
+    #   - Dev (`mvn quarkus:dev`): LOG_DIR not set → fallback `logs/` (relative
+    #     to cwd = repo root, gitignored).
+    #   - Prod systemd: the unit file sets Environment="LOG_DIR=/var/lib/loxmq/logs"
+    #     because ProtectSystem=strict + ReadWritePaths=/var/lib/loxmq makes
+    #     /opt/ readonly, and the former relative path `logs/` evaluated to
+    #     /opt/loxmq/logs/ (= refused, file handler silently broken).
+    #
+    # Fixed filename `application.log` (instead of `${env}.log` or a timestamped
+    # name). An LXC runs a single environment at a time; the profile is already
+    # identifiable from the `Profile staging activated` boot line. Benefit: ops
+    # commands portable across environments (`tail /var/lib/loxmq/logs/application.log`
+    # works in both staging and prod).
+    #
+    # Size-based rotation: the file is capped at 20 MB, then rolled to
+    # `application.log.1` … `application.log.30` and the oldest beyond
+    # `max-backup-index` is deleted. Retention is bounded by SIZE
+    # (~620 MB per log), NOT by calendar age — JBoss LogManager's periodic
+    # (`.yyyy-MM-dd`) rotation never purges old dated files, so we
+    # deliberately avoid the `file-suffix` knob to keep disk usage capped.
+    file:
+      enabled: true
+      path: ${LOG_DIR:logs}/application.log
+      format: "%d{yyyy-MM-dd HH:mm:ss.SSS}|%t|%-5p|%c|%s%e%n"
+      rotation:
+        max-file-size: 20M
+        # 30 size-based backups (`application.log.1` … `.30`) — JBoss
+        # LogManager drops the oldest beyond that. ~620 MB max on disk for
+        # this log, comfortable on the typical 8 GB LXC.
+        max-backup-index: 30
+
+    # Error log — dedicated ERROR-only trace to ease post-mortem debugging.
+    # A separate `error.log` file containing ONLY ERROR-level entries (with
+    # full stack traces via %e). The operator can tail/grep this file for
+    # incidents without drowning in normal INFO chatter from application.log.
+    #
+    # Attached to the ROOT logger via `quarkus.log.handlers = errors,warns`
+    # (see below): receives ERROR from EVERY category (com.quaddan,
+    # Quarkus, Netty, HiveMQ, etc.). The `level=ERROR` filter on the handler
+    # guarantees no INFO/WARN/DEBUG leaks in.
+    #
+    # Note: retry-once WARNs ("Admin command X attempt 1 failed") do NOT
+    # appear here despite their stack trace — by design, they trace a
+    # recoverable transient, not an incident. To see the full retry + final
+    # error sequence, keep application.log alongside.
+    #
+    # Volume very low in steady-state (~0 lines/day). Spikes on incidents.
+    # Size-based rotation, 30 backups like the other logs.
+    #
+    # Warn log — dedicated STRICT WARN-level trace (no ERROR — ERROR already
+    # lives in error.log). Captures things that aren't fatal but warrant a
+    # second look:
+    #   - retry transients ("Admin command X attempt 1 failed")
+    #   - rate-limiting (Semaphore queue length warnings)
+    #   - Miniserver-side HMAC rotation (warnf in MiniserverAdminCommandClient)
+    #   - external library deprecation warnings
+    #
+    # warn.log must carry STRICTLY WARN (ERROR already lives in error.log —
+    # no duplication). The obvious `filter: levels(WARN)` knob does NOT work
+    # here: Quarkus treats `quarkus.log.handler.file.warns.filter` as a
+    # reference to a NAMED filter (declared under `quarkus.log.filter.<name>`),
+    # not as a JBoss LogManager filter expression — so `levels(WARN)` failed at
+    # boot with "Unable to find named filter 'levels(WARN)'" and was silently
+    # dropped (warn.log then captured WARN+ERROR+FATAL). Quarkus's only
+    # built-in named filter is `if-text-matches` (message regex), which can't
+    # gate on level. So the strict-WARN gate is attached PROGRAMMATICALLY at
+    # boot by LoggingProducers.installStrictWarnFilter (a java.util.logging
+    # Filter accepting exactly level WARN). The `level: WARN` below still
+    # applies as the handler threshold (fast path for INFO/DEBUG); the
+    # programmatic filter only has to reject ERROR/FATAL.
+    #
+    # Operator workflow:
+    #   - error.log = "was there a fatal incident?"  (strict ERROR)
+    #   - warn.log  = "were there any recovered transients worth investigating?"
+    #   - application.log = everything INFO+
+    handlers: errors,warns
+    handler:
+      file:
+        # Named file handler "commands" — dedicated audit of inbound commands
+        # received on .../command and .../api. Separate file from the main log
+        # so we can answer "who sent what when" without grepping through the
+        # main-log noise.
+        #
+        # Format: <timestamp>|<topic>|<verdict>|<payload> (verdict ∈ ACCEPT /
+        # DROP-RETAINED / DROP-OVERSIZED / DROP-MALFORMED). See
+        # CommandSubscriber.onIncoming{Command,Api} for the 4 emit sites.
+        #
+        # The "commands" logger (CommandSubscriber.COMMANDS_LOG) routes HERE
+        # AND NOWHERE ELSE — `use-parent-handlers=false` below guarantees we
+        # don't pollute the console + the main log with these lines (which
+        # would otherwise hit at N per second on a busy site).
+        #
+        # Same rework as the main log: stable filename `commands.log`, no
+        # timestamp in the name, size-based rotation with 30 backups.
+        commands:
+          enabled: true
+          path: ${LOG_DIR:logs}/commands.log
+          format: "%d{yyyy-MM-dd HH:mm:ss.SSS}|%m%n"
+          rotation:
+            max-file-size: 20M
+            max-backup-index: 30
+
+        # Audit log — dedicated trace for MUTATIONS on Miniserver users
+        # (disable / group assign / group remove). Separate file `audit.log`
+        # because it's the operational record we want to be able to produce
+        # on demand for a compliance audit (who disabled which user and
+        # when). Very low volume (~a few entries per day), size-based
+        # rotation with 30 backups like the other logs.
+        #
+        # "audit" category — used by UserMutationService.AUDIT logger. No
+        # propagation to the console / main log handler: we want a clean
+        # isolated trace. If the operator needs to see audit live,
+        # `tail -F audit.log`.
+        audit:
+          enabled: true
+          path: ${LOG_DIR:logs}/audit.log
+          format: "%d{yyyy-MM-dd HH:mm:ss.SSS}|%-5p|%m%n"
+          rotation:
+            max-file-size: 20M
+            max-backup-index: 30
+
+        # errors handler (root-attached, ERROR level + same format as the
+        # main file for grep consistency).
+        errors:
+          enabled: true
+          level: ERROR
+          path: ${LOG_DIR:logs}/error.log
+          format: "%d{yyyy-MM-dd HH:mm:ss.SSS}|%t|%-5p|%c|%s%e%n"
+          rotation:
+            max-file-size: 20M
+            max-backup-index: 30
+
+        # warns handler (root-attached). Strict WARN-only is enforced
+        # programmatically (LoggingProducers.installStrictWarnFilter) —
+        # see the rationale comment above for why the declarative
+        # `filter: levels(WARN)` knob cannot be used here.
+        warns:
+          enabled: true
+          level: WARN
+          path: ${LOG_DIR:logs}/warn.log
+          format: "%d{yyyy-MM-dd HH:mm:ss.SSS}|%t|%-5p|%c|%s%e%n"
+          rotation:
+            max-file-size: 20M
+            max-backup-index: 30
+
+    # Per-package levels.
+    category:
+      "com.quaddan":
+        level: INFO
+      # The `loxone.transport.*` DEBUG (per-publish lines "🚂#N/M ⇨ ...")
+      # now lives in application-dev.yml only. Keeping INFO in the base
+      # avoids polluting staging/prod that don't have an explicit override
+      # (operators would otherwise see ~5 DEBUG lines/second).
+      "com.hivemq":
+        level: INFO
+      # Silence the WARN spam from MqttDisconnectHandler at shutdown.
+      # On MQTT v5 + WSS + Mosquitto 2.0.x the close sequence races between the
+      # MQTT DISCONNECT packet, the WebSocket close frame, and the TLS
+      # close_notify. Mosquitto sometimes responds with a `decode_error` TLS
+      # fatal alert that Netty propagates as DecoderException. The MQTT
+      # DISCONNECT has already landed (the retained `offline` status is
+      # correctly stored on the broker by the time the alert fires), so the
+      # exception is purely cosmetic teardown noise. Real disconnect issues
+      # still surface at ERROR upstream — HiveMqClient.disconnect logs WARN on
+      # its own failure path.
+      "com.hivemq.client.internal.mqtt.handler.disconnect":
+        level: ERROR
+      "io.quarkus":
+        level: INFO
+      "io.netty":
+        level: WARN
+      # Silence the cosmetic noise from the SSE PublisherResponseHandler when
+      # a browser drops its connection abruptly (close tab, navigate away,
+      # network blip). On staging steady-state at ~5 state events/sec,
+      # opening/closing a /states tab systematically triggers an ERROR
+      # `Exception in SSE server handling, impossible to send it to client`
+      # (StacklessClosedChannelException) followed by a Netty WARN
+      # `Failed to mark a promise as failure` + `IllegalReferenceCountException`
+      # (race between the close and the in-flight buffer write).
+      #
+      # The affected subscriber is gone anyway — the other subscribers keep
+      # going normally. Without this silence: journalctl pollution on every
+      # browser navigation.
+      #
+      # Why OFF and not WARN/FATAL: the PublisherResponseHandler doesn't log
+      # anything else useful on the binding side (no distinct WARN, no INFO).
+      # Setting OFF loses visibility on potential real publisher SSE errors,
+      # but those would also surface on StateStreamResource (catch in emit())
+      # and StateStreamResource.pushState (catch in LiveStateSseEnricher.push),
+      # with more meaningful logs. The safety net stays in place via our own
+      # beans.
+      "org.jboss.resteasy.reactive.server.handlers.PublisherResponseHandler":
+        # NB: "OFF" must be quoted — YAML 1.1 parses it as boolean false otherwise.
+        level: "OFF"
+      # Same reasoning: `io.netty.channel.AbstractChannelHandlerContext`
+      # emits "Failed to mark a promise as failure because it has failed
+      # already" as cosmetic post-close noise. No useful info, just noise.
+      "io.netty.channel.AbstractChannelHandlerContext":
+        level: ERROR
+      # Silence the HttpCertificateUpdateEventListener INFO that fires on
+      # every TLS cert rotation / at boot:
+      #   "The TLS configuration `server` used by the HTTP server `http server`
+      #    has been updated"
+      # No actionable info for the operator (the event is expected), just
+      # noise in application.log. Level WARN keeps the real issues (but in
+      # practice this emitter only produces INFO/DEBUG).
+      "io.quarkus.vertx.http.runtime.HttpCertificateUpdateEventListener":
+        level: WARN
+
+      # Audit + commands categories — dedicated handlers, isolated from
+      # the parent.
+      "commands":
+        handlers: commands
+        use-parent-handlers: false
+        level: INFO
+      "audit":
+        handlers: audit
+        use-parent-handlers: false
+        level: INFO
+
+# ============================================================================
+#  loxone.* — binding-specific configuration
+# ============================================================================
+loxone:
+  # ==========================================================================
+  #  loxone.boot.* — master boot orchestration
+  #
+  # When loxone.boot.auto-start=true (default), the binding chains
+  # MQTT → bootstrap → miniserver session in that strict order at startup.
+  # The per-service loxone.transport.auto-connect and
+  # loxone.miniserver.auto-connect flags are IGNORED in this mode — see
+  # config/LoxoneConfig.java § Boot for the full rationale.
+  #
+  # Set to false in environments where the operator explicitly drives
+  # connectivity (the %test profile overrides it to false). Override
+  # per-deployment via env LOXONE_BOOT_AUTO_START=false.
+  # ==========================================================================
+  boot:
+    auto-start: true
+
+    # loxone.boot.halt-on-failure — exits the JVM with code 1 if the boot
+    # chain (MQTT → bootstrap → session) fails on its VERY FIRST attempt.
+    # For systemd deployments, this lets Restart=on-failure take over and
+    # StartLimitBurst surface the error in `systemctl status` (operator
+    # must fix the config). The knob only applies pre-RUNNING — once Boot
+    # 3/3 ✓ is reached, post-RUNNING session drops are handled by
+    # ReconnectScheduler (retry forever, never exit).
+    #
+    # Default true: sensible prod posture. Set false for fail-soft behaviour
+    # (local dev without systemd, or external monitoring that drives restart
+    # policy → manual retry via POST /api/v1/bootstrap + /connect).
+    halt-on-failure: true
+
+  # ==========================================================================
+  #  loxone.miniserver.*
+  # ==========================================================================
+  miniserver:
+    connection:
+      # host / port of the Miniserver. Override per deployment via the
+      # MINISERVER_HOST / MINISERVER_PORT env vars (the example.com fallback
+      # only lets the binding boot; it will fail to reach a real device).
+      host: ${MINISERVER_HOST:miniserver.example.com}
+      port: ${MINISERVER_PORT:443}
+      # secure = operator PREFERENCE for TLS, not an absolute toggle. The
+      # effective scheme (http+ws vs https+wss) is resolved at runtime by
+      # ConnectionModeResolver, which combines this with the Miniserver's own
+      # TLS readiness: secure=false ⇒ always plain; secure=true ⇒ https+wss on
+      # a Gen2 with a valid cert, but auto-downgraded to plain on Gen1 (no TLS
+      # support) or a Gen2 with a missing/expired cert (with a logged reason).
+      secure: true
+      # HTTP sub-block (cfgApi, getPublicKey bootstrap calls)
+      http:
+        # TCP connect-phase timeout for the bootstrap HTTP calls
+        # (jdev/cfg/apiKey, jdev/sys/getPublicKey).
+        # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+        # "Time units" note in the header).
+        connect-timeout: PT3S
+        # Full request→response round-trip timeout for those same bootstrap calls.
+        # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+        # "Time units" note in the header).
+        request-timeout: PT3S
+        # Cap on concurrent in-flight HTTP admin commands toward the
+        # Miniserver. 4 = leaves room for WS event-tables + keepalive.
+        # Without the cap, a burst of rapid navigation across the dashboard
+        # pages overloads the V17 device (~6-8 empirical HTTP slots) and
+        # triggers operator-perceived throttling within ~30s.
+        admin-max-concurrent: 4
+        # How long an admin command may wait in the Semaphore queue (capped by
+        # admin-max-concurrent above) before failing fast with an
+        # AdminCommandException. Keep it > request-timeout × 2 so in-flight calls
+        # can drain; the 30s default balances "the click doesn't look frozen"
+        # against false positives when the Miniserver is slow to digest.
+        # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+        # "Time units" note in the header).
+        admin-wait-timeout: PT30S
+      # WS sub-block (session)
+      ws:
+        # WebSocket endpoint path on the Miniserver (RFC 6455). Stable across
+        # firmware versions; rarely needs changing.
+        path: /ws/rfc6455
+        # How often the binding sends the Loxone `keepalive` command on the
+        # open WebSocket to keep the session alive and detect a dead link.
+        # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+        # "Time units" note in the header).
+        keepalive-interval: PT60S
+
+    app:
+      # ----------------------------------------------------------------------
+      # app.id — REQUIRED, per-instance hyphenated UUID (8-4-4-4-12).
+      #
+      # This single value fans out into FIVE places, so it MUST be unique to
+      # each running instance:
+      #   1. MQTT topic root  → every published / subscribed topic is
+      #      `iot/loxmq/<app.id>/...` (see loxone.transport.topics below).
+      #   2. MQTT client-id   → loxone.transport.connection.client-id
+      #      interpolates ${loxone.miniserver.app.id}.
+      #   3. JWT client-UUID  → sent to the Miniserver as the {uuid} segment of
+      #      `jdev/sys/getjwt/{hash}/{user}/{permission}/{uuid}/{info}`, so the
+      #      Miniserver binds the issued token to this client identity.
+      #   4. LoxAPP3 cache dir → on-disk cache sub-folder `cache/<app.id>/`.
+      #   5. Health / management `uuid` (readiness probe + /api/v1 surface).
+      #
+      # CHANGE THIS before first deployment and use a DISTINCT value per
+      # instance. Two instances sharing one app.id collide on the same retained
+      # MQTT topics AND fight over the same Loxone token slot. Generate one with
+      # `uuidgen` (or any UUIDv4 source).
+      #
+      # The all-zeros value below is an intentional "not configured yet"
+      # sentinel — the binding boots, but you are meant to replace it. The
+      # dev / staging / prod profiles ship their own random placeholder UUIDs;
+      # you may also override per deployment via the LOXONE_MINISERVER_APP_ID
+      # environment variable.
+      # ----------------------------------------------------------------------
+      id: 00000000-0000-0000-0000-000000000000
+      # app.info — human-readable label for the token this binding requests.
+      # Sent as the getjwt {info} field, shown in Loxone Config's token list
+      # (Authentication > Tokens), and republished under …/app_info. Pick
+      # something that identifies the instance at a glance (e.g. "loxmq PROD").
+      info: loxmq
+      # `permission` is a BITMASK of the requested bits, not a single ID
+      # as the V17.0 spec might suggest. Requesting `permission=4` (App)
+      # grants a "non-destructive" subset (App + Op-Modes + AD + Adopt-UI =
+      # tokenRights 1668) REGARDLESS of the user's effective rights → admin
+      # commands like `getuserlist2`, `addedituser`, `assignusertogroup` get
+      # rejected with Code=403 even when the user holds all rights in
+      # Loxone Config.
+      #
+      # Empirically (test 2026-05-27): requesting `permission=4095`
+      # (= 0xFFF = bits 0-11) grants exactly those bits the user has —
+      # including User-Mgmt (0x800) needed for the /users surface.
+      #
+      # Bits requested here (4095):
+      #   0x001 Admin           — general admin user flag (for /users)
+      #   0x002 Web             — not strictly required, included for flexibility
+      #   0x004 App             — long-lived token (weeks)
+      #   0x008 Config          — Loxone Config-grade ops
+      #   0x010 FTP             — not used, included for flexibility
+      #   0x020 Edit User       — change own password
+      #   0x040 Expert-mode     — not used
+      #   0x080 Op-Modes        — /schedules (calendar*)
+      #   0x100 Sys-WS          — system-level web services (reboot etc.) — not used
+      #   0x200 AD              — auto designer
+      #   0x400 Adopt-UI        — modify visualisation
+      #   0x800 User-Mgmt       — /users + /api/v1/users/* (CRITICAL for the user-management surface)
+      #
+      # Bits deliberately NOT requested (>= 0x1000): Device-Mgmt, Plugin-Mgmt,
+      # Trust-JWT-Auth, Trigger Update/Backup — destructive / unused.
+      #
+      # If the binding user lacks some bits in Loxone Config, the Miniserver
+      # returns tokenRights = (4095 AND user-rights) — no error, just an
+      # effective subset. The binding works as long as the used bits (App
+      # + Op-Modes + User-Mgmt) are present.
+      permission: 4095
+
+    # Credentials — MUST be supplied via environment variables in any real
+    # deployment. The `CHANGE_ME` fallback only satisfies @NotBlank so the
+    # binding boots; authentication against the Miniserver will then fail
+    # with a clear error in the logs. See SECURITY.md "Credentials".
+    security:
+      credentials:
+        user: ${LOXONE_MINISERVER_AUTH_USER:CHANGE_ME}
+        password: ${LOXONE_MINISERVER_AUTH_PASSWORD:CHANGE_ME}
+      # JWT refresh schedule. The binding refreshes its Loxone token
+      # periodically so it never expires mid-session.
+      token:
+        refresh:
+          # First daily refresh as an ISO-8601 local time "HH:mm:ss"
+          # (java.time.LocalTime).
+          delay-time: "04:30:00"
+          # Interval between refreshes as an ISO-8601 duration "PnDTnHnMnS"
+          # (java.time.Duration — see the "Time units" note in the header).
+          period: PT24H
+
+    # Crypto sub-block — the two HashAlgo entries need explicit values
+    # (digest vs MAC are distinct algorithm names).
+    crypto:
+      hash-password:
+        algo: SHA-256
+      hash-user-password:
+        algo: HmacSHA256
+
+    # Miniserver WebSocket reconnect policy (exponential backoff with jitter).
+    # Applies to WS drops AFTER the binding has reached RUNNING once; the very
+    # first bootstrap is governed by loxone.boot.halt-on-failure instead.
+    reconnect:
+      enable: true            # master switch for automatic WS reconnection
+      initial-delay: PT1S     # delay before the first reconnect attempt (ISO-8601 duration "PnDTnHnMnS", see header)
+      max-delay: PT2H         # ceiling the backoff delay grows toward (ISO-8601 duration "PnDTnHnMnS", see header)
+      multiplier: 2.0         # each failed attempt multiplies the delay by this
+      jitter-factor: 0.2      # ±fraction of randomness added to avoid thundering herd
+
+    # Cache for LoxAPP3.json — two-level invalidation:
+    #   1. lastModified match (miniserver's probe response vs on-disk marker)
+    #   2. TTL safety net — even when lastModified matches, if the marker file
+    #      is older than `ttl` on disk a fresh download is forced. Guards
+    #      against firmware upgrades that ship structure-file changes without
+    #      bumping the timestamp. Set to PT0S to disable the TTL check.
+    # Resolved via ${CACHE_DIR:cache} for the same reason as LOG_DIR: the
+    # relative path `cache` resolves under `WorkingDirectory=/opt/...` which
+    # is READONLY (ProtectSystem=strict). The unit file sets
+    # CACHE_DIR=/var/lib/loxmq/cache. Without this remap: `LoxApp3 cache
+    # store failed (... Read-only file system)` on every RUNNING transition
+    # → re-download of ~258 KB of structure file on every reconnect.
+    cache:
+      directory: ${CACHE_DIR:cache}
+      # TTL safety-net duration (see the two-level invalidation note above);
+      # PT0S disables the TTL check so only the lastModified match decides.
+      # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+      # "Time units" note in the header).
+      ttl: P7D
+
+    subscription:
+      # Enable decoding + publishing of Weather state-tables (Loxone type 7).
+      # A paid subscription with Loxone is required in order to retrieve weather messages.
+      # Off by default; when true you must also add 7 to states-to-decode below but Loxone subscription to weather mesasge is required.
+      weather: false
+
+    # Which state-table types to decode (V17.0 spec: 2=Value, 3=Text, 4=DayTimer,
+    # 7=Weather). Add 7 to enable weather (requires subscription.weather=true).
+    states-to-decode: 2,3,4
+
+  # ==========================================================================
+  #  loxone.transport.* (MQTT v5 broker)
+  # ==========================================================================
+  transport:
+    # Publish strategy for state-tables:
+    #   SINGLE → one MQTT message per Loxone UUID on {topic}/{uuid} (raw value).
+    #   BATCH  → one MQTT message on {topic}: a JSON envelope holding all states.
+    # SINGLE (default) gives one retained topic per control — Home-Assistant-friendly.
+    mode: SINGLE
+
+    # protocol = transport family (ws or tcp). The secure flag below picks
+    # tls-or-not on top: (ws + secure=true) → wss, (tcp + secure=true) → ssl.
+    # The legacy values wss/ssl/tls/mqtts are still accepted (mapped back to
+    # their family) but the new style is more explicit about intent.
+    connection:
+      protocol: ws
+      secure: true
+      # Broker host / port. Override per deployment via the MQTT_BROKER_HOST /
+      # MQTT_BROKER_PORT env vars.
+      host: ${MQTT_BROKER_HOST:broker.example.com}
+      port: ${MQTT_BROKER_PORT:8083}
+      # URL path — only relevant for the ws / wss protocol family.
+      path: /mqtt
+      # MQTT client-id presented to the broker. Interpolated from app.id so it
+      # is unique per instance (see the app.id note above); two clients sharing
+      # a client-id would forcibly disconnect each other.
+      client-id: ${loxone.miniserver.app.id}
+      # TCP connect timeout for the broker connection.
+      # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+      # "Time units" note in the header).
+      connect-timeout: PT3S
+      # MQTT keepalive (PINGREQ) interval negotiated with the broker.
+      # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+      # "Time units" note in the header).
+      keepalive-interval: PT60S
+      # Ask the broker to include Reason String / User Properties in its
+      # failure responses (richer diagnostics on a rejected connect/publish).
+      request-problem-information: true
+
+    # MQTT v5 session semantics.
+    session:
+      # clean-start=true → start a fresh session on every connect (no resumed
+      # subscriptions or queued messages from a previous session).
+      clean-start: true
+      # How long the broker retains session state after disconnect.
+      # PT0S → discard immediately (pairs with clean-start=true above).
+      # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
+      # "Time units" note in the header).
+      expiry-interval: PT0S
+
+    security:
+      credentials:
+        # enable=true → send MQTT username/password on connect (broker auth).
+        # Set to false only for an anonymous broker.
+        enable: true
+        # user/password OVERRIDE via env in deployment.
+
+      # Inbound-payload size cap (bytes). Applied to messages received on the
+      # subscribed …/command and …/api topics. Anything larger is dropped with
+      # a WARN log; no JSON parse is attempted. 4 KB comfortably covers any
+      # legitimate command/API SET and blocks flooding attempts. Set to 0 to
+      # disable (NOT recommended in production).
+      max-inbound-payload-bytes: 4096
+
+    reconnection:
+      # HiveMQ client auto-reconnect for TRANSIENT broker drops (network blip,
+      # broker restart) — exponential backoff bounded by min/max-delay below.
+      # Distinct from the out-of-service path (triggered by the Miniserver going
+      # down, not the broker).
+      automatic: true
+      min-delay: PT3S         # first reconnect delay after a broker drop (ISO-8601 duration "PnDTnHnMnS", see header)
+      max-delay: PT2M         # ceiling the backoff delay grows toward (ISO-8601 duration "PnDTnHnMnS", see header)
+      # Out-of-service reconnect timing — applied when the miniserver fires the
+      # OutOfService indicator (identifier 5). The binding closes the MQTT session
+      # (LWT publishes "offline"), then schedules a reconnect after `initial-delay`;
+      # if that connect fails, it retries every `retry-interval` until success.
+      # Rationale: the miniserver is rebooting/updating, no point hammering the
+      # broker with reconnect attempts that are bound to find a stale binding state.
+      out-of-service:
+        initial-delay: PT30S    # delay before the first post-OutOfService reconnect (ISO-8601 duration "PnDTnHnMnS", see header)
+        retry-interval: PT15S   # gap between subsequent retries until success (ISO-8601 duration "PnDTnHnMnS", see header)
+
+    # Topic tree
+    topics:
+      # Topic prefix for everything the binding publishes / subscribes. The
+      # full root is `<root>/<app.id>` (app.id is appended automatically — see
+      # the app.id note above and the ${...}/${loxone.miniserver.app.id}/...
+      # interpolations below). Change `root` to re-namespace all topics at once.
+      root: iot/loxmq
+      # Default MQTT QoS for every publish/subscribe below (referenced via
+      # ${loxone.transport.topics.qos}). 2 = exactly-once delivery.
+      qos: 2
+
+      # Will (LWT) — broker publishes the offline payload on `topic` when the
+      # binding's session goes away ungracefully. The binding publishes the online
+      # payload right after CONNACK so subscribers see a clean presence toggle.
+      will:
+        enable: true
+        retain: true
+        message-online: online
+        message-offline: offline
+        topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/status
+        qos: ${loxone.transport.topics.qos}
+
+      # Publish endpoints — base topic paths derived from the topic root + the
+      # miniserver UUID. The semantic names (value-states, text-states, …) stand
+      # in for the {type_2, type_3, type_4, type_7} keys for clarity. The values
+      # 2/3/4/7 stay relevant only as the Loxone-side numeric type IDs
+      # (see ARCHITECTURE.md §Tests for the mapping).
+      publish:
+        app-info:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/app_info
+          qos: ${loxone.transport.topics.qos}
+          retain: true
+        command-response:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/command_response
+          qos: ${loxone.transport.topics.qos}
+          retain: false
+        lox-app3:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/loxapp3
+          qos: ${loxone.transport.topics.qos}
+          retain: true
+        out-of-service:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/out_of_service
+          qos: ${loxone.transport.topics.qos}
+          retain: false
+        # State-table topics — schema kept stable so existing downstream
+        # consumers (Home Assistant + custom integrations) work without
+        # rewiring. The numeric suffix is the Loxone identifier (2 = value, 3 = text,
+        # 4 = daytimer, 7 = weather). See `loxone.transport.mode` (default SINGLE):
+        #   • SINGLE → one publish per UUID on {topic}/{uuid} with the raw payload.
+        #   • BATCH  → one publish on {topic} with a JSON envelope holding all states.
+        value-states:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/states/type_2
+          qos: ${loxone.transport.topics.qos}
+          retain: true
+        text-states:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/states/type_3
+          qos: ${loxone.transport.topics.qos}
+          retain: true
+        day-timer-states:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/states/type_4
+          qos: ${loxone.transport.topics.qos}
+          retain: true
+        weather-states:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/states/type_7
+          qos: ${loxone.transport.topics.qos}
+          retain: true
+
+      # Subscribe endpoints
+      subscribe:
+        command:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/command
+          qos: ${loxone.transport.topics.qos}
+        api:
+          topic: ${loxone.transport.topics.root}/${loxone.miniserver.app.id}/api
+          qos: ${loxone.transport.topics.qos}

@@ -1,0 +1,107 @@
+# ============================================================================
+# PROD profile.
+#
+# Activated by `-Dquarkus.profile=prod`. Stricter than staging:
+# - Swagger UI off (operators access it on staging or via SSH tunnel if needed)
+# - Insecure HTTP listener redirects to HTTPS
+# - DEBUG logs disabled
+#
+# Properties grouped by prefix: quarkus.* → loxone.*
+# (alphabetical at the prefix level, logical within each group).
+# ============================================================================
+
+quarkus:
+  http:
+    # bare HTTP requests on http://abl.example.com:8080 are redirected to
+    # https://abl.example.com:8443.
+    insecure-requests: redirect
+    tls-configuration-name: server
+
+  log:
+    # INFO. Console = LoxmqConsoleFormatter, file = plain-text
+    # in logs/application.log (see base application.yml).
+    level: INFO
+
+  swagger-ui:
+    # Enabled in prod on operator request (2026-06). Default was OFF —
+    # this exposes the explorable API surface (/q/swagger-ui) on the
+    # public prod host. Set back to false to re-harden. Build-time
+    # property: a rebuild + redeploy is required for any change to apply.
+    always-include: true
+  # Note: the `quarkus.dev-ui.always-include = false` property that used to sit
+  # here no longer exists in Quarkus 3.36.1 (the dev-UI is now strictly
+  # dev-mode, never exposed in a runtime jar). Quarkus warns "Unrecognized
+  # configuration key" if it stays. No security loss: `/q/dev-ui` is not
+  # reachable in packaged prod mode anyway.
+
+  # cert paths.
+  #
+  # Option B layout: certs side-car of the app under /opt/loxmq/certs/.
+  # A centralized certbot LXC pushes them here via rsync (see
+  # service/README.md §4). The `loxmq` user does NOT need the `ssl-cert`
+  # group — the certs already land with the right perms (root:loxmq 0640).
+  #
+  # Override per-deployment via env var LOXONE_CERT_DIR. Example:
+  #   LOXONE_CERT_DIR=/etc/letsencrypt/live/example.com
+  # (reverts to the classic certbot layout if you redeploy outside an LXC).
+  #
+  # Cert auto-reload: Quarkus TLS Registry watches the mtime of the
+  # pem.0.cert/key files every `reload-period`; if changed → silent
+  # SSLContext rebuild, no binding restart. PT1H is enough for Let's
+  # Encrypt certs pushed at most once every 60 days.
+  tls:
+    server:
+      key-store:
+        pem:
+          "0":
+            cert: ${LOXONE_CERT_DIR:/opt/loxmq/certs}/fullchain.pem
+            key:  ${LOXONE_CERT_DIR:/opt/loxmq/certs}/privkey.pem
+      # Cert mtime poll interval (see the auto-reload note above).
+      # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration).
+      reload-period: PT1H
+
+loxone:
+  miniserver:
+    # production identity. The app.id below is a placeholder — REPLACE it with
+    # your own per-instance UUID (full explanation in application.yml). NOTE
+    # that on a LIVE instance the app.id IS the retained-MQTT namespace, so
+    # changing it later renames every retained topic at once: only do that
+    # during a planned cutover (downstream consumers must follow the new root).
+    connection:
+      host: ${MINISERVER_HOST:miniserver.example.com}
+      port: ${MINISERVER_PORT:443}
+      secure: true
+      # Gen2 firmware 17.x exposes plain HTTP on :80 and HTTPS TLS-only on
+      # :443 (distinct listeners). The binding points at :443 → HTTPS must
+      # be forced from the very first bootstrap call, otherwise the request
+      # leaves as plain HTTP against the TLS-only listener and crashes
+      # with "no bytes".
+      bootstrap-prefer-secure: true
+      # The Miniserver presents a Let's Encrypt cert
+      # `*.<serial>.dyndns.loxonecloud.com` (Loxone CloudDNS). The SAN does
+      # NOT cover `miniserver.example.com`, so the JDK would refuse the
+      # handshake. We skip hostname verification — the LE chain is still
+      # validated against the JVM truststore.
+      # To get rid of this knob: upload a `*.example.com` cert onto the
+      # Miniserver via Loxone Config (Settings > Network > Certificates),
+      # then set this knob back to false.
+      tls-skip-hostname-verification: true
+    app:
+      id: d021b283-4f50-4822-91c6-91a9a1c83dd2
+      info: loxmq PRODUCTION
+
+  transport:
+    # broker via the wildcard cert (same setup as staging).
+    # Credentials supplied via env in deployment:
+    #   LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER     (Base64 user)
+    #   LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD (Base64 password)
+    connection:
+      protocol: wss
+      secure: true
+      host: ${MQTT_BROKER_HOST:broker.example.com}
+      port: ${MQTT_BROKER_PORT:8084}
+      path: /mqtt
+    security:
+      credentials:
+        user:     ${LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER:CHANGE_ME}
+        password: ${LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD:CHANGE_ME}

@@ -1,0 +1,72 @@
+# ============================================================================
+# TEST profile — values loaded for @QuarkusTest runs.
+#
+# Quarkus selects %test (NOT %dev) when running under @QuarkusTest. This file
+# overlays the base application.yml with values that let @ConfigMapping
+# validation pass without requiring an operator-supplied environment variable.
+#
+# Nothing here is sensitive — all values are placeholders (Base64-encoded
+# literals "fake_user" and "fake_pass") just enough to satisfy @NotBlank
+# constraints during the boot smoke. Tests that actually exercise the broker
+# / miniserver supply their own profile-specific overrides.
+#
+# Properties are grouped by prefix: quarkus.* → loxone.*
+# (alphabetical at the prefix level, logical within each group).
+# ============================================================================
+
+# Note — the former `app.launch.timestamp` + `app.launch.env` stubs were
+# dropped along with the `LoxoneLaunchConfigSource` SPI. The
+# `quarkus.log.file.path` (see below) is now plain `target/test.log` —
+# no unresolved `${…}` expansion that would have failed the
+# `@QuarkusTest` boot with SRCFG00011.
+
+quarkus:
+  http:
+    # plain HTTP only in tests (no cert juggling, no port 8443).
+    insecure-requests: enabled
+
+  log:
+    # keep the custom LoxmqConsoleFormatter (LoggingProducers swaps it in
+    # at startup); redirect the file handler into target/ so `mvn clean`
+    # wipes test logs. `enabled=true` is MANDATORY (default false in
+    # Quarkus 3.27+) — see application.yml for the details.
+    file:
+      enabled: true
+      path: target/test.log
+
+loxone:
+  boot:
+    # keep the boot orchestrator OFF for tests. The base default is true
+    # (production wants automatic startup) but @QuarkusTest runs against
+    # fake resources / no resources at all; auto-starting would either
+    # burn the test clock on retries or hit real LAN endpoints.
+    auto-start: false
+
+  miniserver:
+    # local, plain HTTP. Base64("fake_user"/"fake_pass").
+    connection:
+      host: 127.0.0.1
+      port: 80
+      secure: false
+    app:
+      id: 00000000-0000-0000-0000-000000000001
+      info: loxmq TEST
+    security:
+      credentials:
+        user: ZmFrZV91c2Vy
+        password: ZmFrZV9wYXNz
+
+  transport:
+    # local TCP broker stub. `secure` left unset so the @WithDefault("true")
+    # kicks in; tests that need a different value override it via
+    # QuarkusTestProfile.getConfigOverrides() (e.g. TransportConnectionResolverTest).
+    # `path` left unset — Optional in the mapping.
+    connection:
+      protocol: tcp
+      host: 127.0.0.1
+      port: 1883
+    security:
+      credentials:
+        enable: false
+        user: ZmFrZV91c2Vy
+        password: ZmFrZV9wYXNz

@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="dashboard.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{appName} — dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE. -->
+    <script src="/js/i18n.js"></script>
+    <!-- HTMX for live state polling -->
+    <script src="https://unpkg.com/htmx.org@2.0.4"
+            integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+            crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --bg: #0e1116;
+            --bg-panel: #161b22;
+            --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9;
+            --fg-dim: #8b949e;
+            --accent: #58a6ff;
+            --accent-warn: #d29922;
+            --accent-down: #f85149;
+            --accent-up: #3fb950;
+            --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            /* Native UI in light variant. */
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+            line-height: 1.5;
+        }
+        header {
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+        }
+        /* Logo bumped to 96px so the icon details (steam wisps, Quarkus
+           dot, signal pips) are legible at glance distance. */
+        header h1 img.logo {
+            height: 96px;
+            width: auto;
+            display: block;
+        }
+        /* Visually-hidden text for screen readers ; the logo carries the
+           visual identity but a11y still needs the plain text. */
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        /* `.meta` is scoped to the footer. Same look : monospace + dimmed. */
+        footer .meta {
+            color: var(--fg-dim);
+            font-size: 0.85rem;
+            font-family: var(--mono);
+        }
+        main {
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        /* Tabbed layout — the `1fr 1fr` grid lives on each active tabpanel.
+           The inactive tab is `hidden` (display:none on the browser side, no flash
+           of unstyled content), so the grid only evaluates on the visible
+           panel. */
+        .tabpanel-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+        /* nav.tabs lives in <header>, styled to match the sister pages'
+           pill convention. Same visual language across all 4 pages so
+           navigating feels continuous. */
+        header nav.tabs {
+            display: flex;
+            gap: 0.5rem;
+        }
+        header nav.tabs a {
+            color: var(--fg-dim);
+            text-decoration: none;
+            padding: 0.4rem 1rem;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        header nav.tabs a:hover {
+            color: var(--fg);
+            background: var(--bg-panel-hover);
+        }
+        header nav.tabs a.active {
+            color: var(--accent);
+            border-color: var(--accent);
+        }
+        /* i18n language combobox. */
+        header .lang-switcher {
+            /* Globe icon (inline SVG, fg-dim stroke) pinned to the left ;
+               padding-left clears room for it. Native select arrow stays
+               on the right. */
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: 0.55rem center;
+            background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px;
+            padding: 0.35rem 0.5rem 0.35rem 1.9rem; font-family: inherit;
+            font-size: 0.8rem; cursor: pointer;
+        }
+        header .lang-switcher:hover { border-color: var(--accent); }
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1.5rem;
+        }
+        .panel h2 {
+            margin: 0 0 1rem 0;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--fg-dim);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+        /* Section title with icon — image to the left of the h2 text.
+           Used by the Miniserver panel. Image is served from
+           META-INF/resources/images/ via Quarkus's built-in static handler. */
+        .panel h2.with-icon {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .panel h2.with-icon img {
+            height: 2.5rem;
+            width:  auto;
+            flex:   0 0 auto;
+        }
+        .panel dl {
+            margin: 0;
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 0.5rem 1rem;
+        }
+        .panel dt {
+            color: var(--fg-dim);
+            font-size: 0.9rem;
+        }
+        .panel dd {
+            margin: 0;
+            font-family: var(--mono);
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge.down { background: var(--accent-down); color: #fff; }
+        .badge.up { background: var(--accent-up); color: #000; }
+        .badge.warn { background: var(--accent-warn); color: #000; }
+        /* Neutral/idle badge — grey, not red. Used for non-error "resting"
+           states (e.g. KeepAlive IDLE while disconnected) so they don't read
+           as a fault. */
+        .badge.muted { background: #6e7681; color: #fff; }
+        /* Actions panel — split into Miniserver | MQTT side-by-side
+           on wide screens, stacked on narrow. An earlier "one big bar"
+           layout (.panel.actions { grid-column: 1/-1 }) was hard to scan
+           when looking for "the MQTT disconnect button". Two scoped
+           panels give the operator a clearer mental model. */
+        .actions-row { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+        @media (max-width: 900px) { .actions-row { grid-template-columns: 1fr; } }
+        .actions form { display: inline-block; margin-right: 0.5rem; margin-bottom: 0.5rem; }
+        /* Simplified dashboard: 2 columns (Miniserver | MQTT Broker).
+           Each column is a vertical stack of panels. The action-feedback
+           block stays full-width below.
+           Mobile: a single column. */
+        .dashboard-cols {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+        @media (max-width: 900px) { .dashboard-cols { grid-template-columns: 1fr; } }
+        .dashboard-col { display: flex; flex-direction: column; gap: 1.5rem; }
+        /* Actions stack — buttons stacked vertically in the Actions
+           panel. Each form full-width so the buttons stay readable. */
+        .actions-stack form {
+            display: block;
+            margin: 0 0 0.5rem 0;
+        }
+        .actions-stack form:last-child { margin-bottom: 0; }
+        .actions-stack button { width: 100%; }
+        /* Button pair — two actions side by side, equal width. Used for the
+           connect / disconnect pairs (MQTT + Miniserver) and the Refresh /
+           Kill token pair. The gap handles inter-button spacing, so the
+           member forms carry no margin of their own. */
+        .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0 0 0.5rem 0; }
+        .btn-pair:last-child { margin-bottom: 0; }
+        .btn-pair form { display: block; margin: 0; }
+        .btn-pair button { width: 100%; }
+        /* Divider between a panel's info block (dl) and its action buttons —
+           a faint rule so the button zone reads as distinct. Used in the two
+           Connection panels (Miniserver + MQTT). */
+        .panel hr { border: 0; border-top: 1px solid var(--border); margin: 1rem 0; }
+        /* Connect-with-bootstrap button — primary, wider than the
+           others. Visually marks "the main action" of the
+           Actions panel. */
+        button.btn-primary {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+        button.btn-primary:hover { background: #79b8ff; border-color: #79b8ff; color: #000; }
+        button {
+            background: var(--bg-panel-hover);
+            color: var(--fg);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Connect / disconnect colour coding. Reuses the badge palette
+           (--accent-up / --accent-down) for consistency with the status
+           pills above the action panels. */
+        button.btn-connect    { background: var(--accent-up);   color: #000; border-color: var(--accent-up);   }
+        button.btn-connect:hover    { background: #4ed26a; border-color: #4ed26a; color: #000; }
+        button.btn-disconnect { background: #b62324; color: #fff; border-color: #b62324; }
+        button.btn-disconnect:hover { background: #cf2e2e; border-color: #cf2e2e; color: #fff; }
+        /* Reboot is the single most destructive action on the page (full
+           Miniserver restart). A deeper, darker red sets it apart from the
+           merely "stop" reds (disconnect / kill token). Text stays white on
+           hover — a dark red needs the contrast. */
+        button.btn-reboot { background: #8b1a1a; color: #ffd33d; border-color: #8b1a1a; }
+        button.btn-reboot:hover { background: #a82424; border-color: #a82424; color: #ffd33d; }
+        /* Footer is a 2-column flex layout :
+           meta (version/profile/rendered) on the LEFT, /q/* links
+           on the RIGHT. Wraps on narrow viewports. */
+        footer {
+            padding: 1rem 2rem;
+            color: var(--fg-dim);
+            font-size: 0.8rem;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        footer nav.footer-links { color: var(--fg-dim); }
+        a { color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>
+            <img class="logo" src="/images/loxmq-logo-compact.svg" alt="">
+            <span class="vh">{appName}</span>
+        </h1>
+        <!-- Nav in the header. The meta info (version / profile /
+             rendered) lives in the footer. Same nav pattern as the
+             sister pages. -->
+        <nav class="tabs" aria-label="Navigation">
+            <a href="/"          data-i18n="nav.dashboard" class="active">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
+            <a href="/users"     data-i18n="nav.users">Users</a>
+            <a href="/logs"      data-i18n="nav.logs">Logs</a>
+        </nav>
+        <!-- Language combobox. -->
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <!-- 2-column dashboard Miniserver | MQTT Broker. Each column
+             stacks its panels (Config / Identity / Token / Health on the
+             left; MQTT Connexion — with its connect/disconnect pair — then
+             the Miniserver Actions panel on the right). The Action feedback
+             panel stays full-width at the bottom. -->
+        <section id="panel-dashboard" class="dashboard-cols">
+
+        <!-- ============================================================ -->
+        <!--  LEFT COLUMN: Miniserver                                     -->
+        <!-- ============================================================ -->
+        <div class="dashboard-col">
+
+            <!-- Config: host/port/UUID/permission/mode + session state. -->
+            <section class="panel actions actions-stack">
+                <h2 class="with-icon">
+                    <img src="/images/loxone-miniserver.png" alt="Loxone Miniserver">
+                    <span><span data-i18n="dashboard.panel.miniserver">Miniserver</span> — <span data-i18n="dashboard.panel.connection">Config</span></span>
+                </h2>
+                <dl>
+                    <dt data-i18n="dashboard.dt.host">Host</dt>           <dd>{config.miniserver.connection.host}</dd>
+                    <dt data-i18n="dashboard.dt.port">Port</dt>           <dd>{config.miniserver.connection.port}</dd>
+                    <dt data-i18n="dashboard.dt.uuid">UUID</dt>           <dd>{config.miniserver.app.id}</dd>
+                    <dt data-i18n="dashboard.dt.permission">Permission</dt>     <dd>{config.miniserver.app.permission}</dd>
+                    <dt data-i18n="dashboard.dt.preferred">Preferred</dt>      <dd>{#if config.miniserver.connection.secure}<span class="badge up">SECURE</span> (https/wss){#else}<span class="badge warn">PLAIN</span> (http/ws){/if}</dd>
+                    <dt data-i18n="dashboard.dt.effective">Effective</dt>      <dd>{#if effectiveMode == 'SECURE'}<span class="badge up">SECURE</span>{#else}<span class="badge warn">PLAIN</span>{/if} {effectiveEndpoint}</dd>
+                    <dt data-i18n="dashboard.dt.webSocket">WebSocket</dt>      <dd>{wsEndpoint}</dd>
+                    {#if downgradeReason.isPresent()}
+                    <dt data-i18n="dashboard.dt.downgrade">Downgrade</dt>      <dd><span class="badge down">DOWNGRADED</span> {downgradeReason.get()}</dd>
+                    {/if}
+                    <dt data-i18n="dashboard.dt.session">Session</dt>        <dd>
+                        {#if sessionState == 'RUNNING'}
+                            <span class="badge up">RUNNING</span>
+                        {#else if sessionState == 'DISCONNECTED'}
+                            <span class="badge down">DISCONNECTED</span>
+                        {#else if sessionState == 'CLOSED'}
+                            <span class="badge down">CLOSED</span>
+                        {#else if sessionState == 'FAILED'}
+                            <span class="badge down">FAILED</span>
+                        {#else}
+                            <span class="badge warn">{sessionState}</span>
+                        {/if}
+                    </dd>
+                </dl>
+
+                <hr>
+
+                <!-- Session actions, grouped into the Connection panel.
+                     Connect / Disconnect side by side (btn-pair); Force
+                     reconnect + Reboot stacked below via .actions-stack.
+                     "Connect to Miniserver" (green) is the primary action —
+                     it calls the atomic POST /api/v1/connect-with-bootstrap
+                     which chains bootstrap + connect in one operator gesture. -->
+                <div class="btn-pair">
+                    <form hx-post="/api/v1/connect-with-bootstrap"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" class="btn-connect" data-i18n="dashboard.btn.connect">Connect to Miniserver</button>
+                    </form>
+                    <form hx-post="/api/v1/disconnect"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" class="btn-disconnect" data-i18n="dashboard.btn.disconnect">Disconnect from Miniserver</button>
+                    </form>
+                </div>
+                <form hx-post="/api/v1/reconnect"
+                      hx-target="#action-feedback"
+                      hx-swap="innerHTML">
+                    <button type="submit" data-i18n="dashboard.btn.reconnect">Force reconnect</button>
+                </form>
+                <!-- Reboot: destructive — restarts the whole Miniserver
+                     (~30–60 s downtime; the WS session drops and
+                     ReconnectScheduler recovers it). hx-confirm gates it
+                     behind a browser confirm() dialog; the English text here
+                     is a fallback, localized at runtime via data-i18n-attr.
+                     Dark red (btn-reboot) — a deeper red than disconnect /
+                     kill token, since this is the most destructive action.
+                     POSTs jdev/sps/restart via /api/v1/reboot. -->
+                <form hx-post="/api/v1/reboot"
+                      hx-target="#action-feedback"
+                      hx-swap="innerHTML"
+                      hx-confirm="Reboot the Miniserver? All connections will drop for ~30–60 s while it restarts."
+                      data-i18n-attr="hx-confirm:dashboard.btn.rebootConfirm">
+                    <button type="submit" class="btn-reboot" data-i18n="dashboard.btn.reboot">Reboot Miniserver</button>
+                </form>
+            </section>
+
+            <!-- Miniserver Identity — populated after bootstrap. -->
+            <section class="panel">
+                <h2 class="with-icon">
+                    <img src="/images/loxone-miniserver.png" alt="Loxone Miniserver">
+                    <span><span data-i18n="dashboard.panel.miniserver">Miniserver</span> — <span data-i18n="dashboard.panel.identity">Identity</span></span>
+                </h2>
+                <dl>
+                    {#if identity.isPresent()}
+                    <dt data-i18n="dashboard.dt.serial">Serial</dt>     <dd>{identity.get().serial}</dd>
+                    <dt data-i18n="dashboard.dt.version">Version</dt>    <dd>{identity.get().version}</dd>
+                    <dt data-i18n="dashboard.dt.generation">Generation</dt> <dd><span class="badge up">{identity.get().generation}</span></dd>
+                    <dt data-i18n="dashboard.dt.https">HTTPS</dt>      <dd>
+                        {#switch identityHttpsStatus.orElse('UNKNOWN')}
+                            {#case 'SUPPORTED'}<span class="badge up">SUPPORTED</span> (valid cert installed){/case}
+                            {#case 'EXPIRED'}<span class="badge down">EXPIRED</span> (cert needs renewal){/case}
+                            {#case 'ABSENT'}<span class="badge warn">N/A</span> (Gen1 — no TLS support){/case}
+                            {#case 'UNKNOWN'}<span class="badge warn">UNKNOWN</span> (unrecognised httpsStatus){/case}
+                        {/switch}
+                    </dd>
+                    <dt data-i18n="dashboard.dt.address">Address</dt>    <dd>{identity.get().address}</dd>
+                    <dt data-i18n="dashboard.dt.local">Local</dt>      <dd>{identity.get().local ?: 'no'}</dd>
+                    <dt data-i18n="dashboard.dt.sdcard">SD card</dt>   <dd>
+                        {#if sdCardPresent}
+                            {#if sdCardHealthy}<span class="badge up" data-i18n="dashboard.sdcard.ok">OK</span>{#else}<span class="badge down" data-i18n="dashboard.sdcard.error">ERROR</span>{/if}
+                            <span class="meta">{sdCardDetail}</span>
+                        {#else}
+                            <span class="badge warn" data-i18n="dashboard.sdcard.pending">PENDING</span>
+                        {/if}
+                    </dd>
+                    {#else}
+                    <dt data-i18n="dashboard.dt.status">Status</dt>     <dd><span class="badge warn">UNRESOLVED</span> <span data-i18n="dashboard.tag.unresolved">— bootstrap (jdev/cfg/apiKey) hasn't landed yet.</span></dd>
+                    {/if}
+                </dl>
+            </section>
+
+        </div><!-- /.dashboard-col Miniserver -->
+
+
+        <!-- ============================================================ -->
+        <!--  RIGHT COLUMN: MQTT Broker                                   -->
+        <!-- ============================================================ -->
+        <div class="dashboard-col">
+
+            <!-- MQTT Connexion: config readout + the connect / disconnect
+                 pair (side by side via .btn-pair). Carries the `actions`
+                 class so the post-action auto-reload JS — which keys off
+                 `.panel.actions` — still fires after a connect/disconnect. -->
+            <section class="panel actions">
+                <h2 class="with-icon">
+                    <img src="/images/mqtt.png" alt="MQTT">
+                    <span><span data-i18n="dashboard.panel.mqtt">MQTT Broker</span> — <span data-i18n="dashboard.panel.connection">Config</span></span>
+                </h2>
+                <dl>
+                    <dt data-i18n="dashboard.dt.protocol">Protocol</dt>  <dd>{config.transport.connection.protocol}</dd>
+                    <dt data-i18n="dashboard.dt.host">Host</dt>      <dd>{config.transport.connection.host}</dd>
+                    <dt data-i18n="dashboard.dt.port">Port</dt>      <dd>{config.transport.connection.port}</dd>
+                    <dt data-i18n="dashboard.dt.path">Path</dt>      <dd>{config.transport.connection.path.orElse('(none)')}</dd>
+                    <dt data-i18n="dashboard.dt.clientId">Client ID</dt> <dd>{config.transport.connection.clientId}</dd>
+                    <dt data-i18n="dashboard.dt.mode">Mode</dt>      <dd>{config.transport.mode}</dd>
+                    <dt data-i18n="dashboard.dt.qos">QoS</dt>       <dd>{config.transport.topics.qos}</dd>
+                    <dt data-i18n="dashboard.status.connected">Connected</dt> <dd>
+                        {#if brokerConnected}
+                            <span class="badge up" data-i18n="users.option.yes">YES</span>
+                        {#else}
+                            <span class="badge down" data-i18n="users.option.no">NO</span>
+                        {/if}
+                    </dd>
+                </dl>
+
+                <hr>
+
+                <!-- Connect / Disconnect side by side. -->
+                <div class="btn-pair">
+                    <form hx-post="/api/v1/transport/connect"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" class="btn-connect" data-i18n="dashboard.btn.connectMqtt">Connect to MQTT broker</button>
+                    </form>
+                    <form hx-post="/api/v1/transport/disconnect"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" class="btn-disconnect" data-i18n="dashboard.btn.disconnectMqtt">Disconnect from MQTT broker</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Health — KeepAlive + RTT + handshake. -->
+            <section class="panel">
+                <h2 class="with-icon">
+                    <img src="/images/loxone-miniserver.png" alt="Loxone Miniserver">
+                    <span><span data-i18n="dashboard.panel.miniserver">Miniserver</span> — <span data-i18n="dashboard.panel.keepalive">Health</span></span>
+                </h2>
+                <dl>
+                    <dt data-i18n="dashboard.dt.keepalive">KeepAlive</dt>     <dd>
+                        {#if keepaliveScheduled}
+                            <span class="badge up">ARMED</span> — {config.miniserver.connection.ws.keepaliveInterval}
+                        {#else}
+                            <span class="badge muted">IDLE</span>
+                        {/if}
+                    </dd>
+                    <dt data-i18n="dashboard.dt.lastRtt">Last RTT</dt>      <dd>
+                        {#if lastKeepaliveRttMs.isPresent()}
+                            <span class="badge {rttBadgeClass}">{lastKeepaliveRttMs.get()} ms</span>
+                            {#if lastKeepaliveResponseAt.isPresent()}
+                                <span class="meta"> · {lastKeepaliveResponseAt.get().formatLocal}</span>
+                            {/if}
+                        {#else}
+                            <span class="meta" data-i18n="dashboard.meta.noResponse">no response yet</span>
+                        {/if}
+                    </dd>
+                    <dt data-i18n="dashboard.dt.lastHandshake">Last handshake</dt> <dd>
+                        {#if lastHandshakeDurationMs.isPresent()}
+                            {lastHandshakeDurationMs.get()} ms <span class="meta">(CONNECTING → RUNNING)</span>
+                        {#else}
+                            <span class="meta">—</span>
+                        {/if}
+                    </dd>
+                    <dt data-i18n="dashboard.dt.metrics">Metrics</dt>       <dd><a href="/q/metrics">/q/metrics</a></dd>
+                </dl>
+            </section>
+
+            <!-- Token panel: surfaces expiresAt / tokenRights / expired,
+                 with 2 buttons Refresh / Kill. Refresh calls POST
+                 /api/v1/token/refresh which sends an async refreshjwt;
+                 Kill calls /token/kill which invalidates the token server-side
+                 and closes the WS. No visible token (tokenPresent=false)
+                 → placeholder + disabled buttons.
+                 Placed in the right column, below MQTT Connexion, per the
+                 dashboard layout request. -->
+            <section class="panel actions">
+                <h2 class="with-icon">
+                    <img src="/images/loxone-miniserver.png" alt="Loxone Miniserver">
+                    <span><span data-i18n="dashboard.panel.miniserver">Miniserver</span> — <span data-i18n="dashboard.panel.token">Token</span></span>
+                </h2>
+                <dl>
+                    {#if tokenPresent}
+                    <dt data-i18n="dashboard.dt.expiresAt">Expires at</dt>  <dd>{tokenExpiresAt.get().formatLocal}</dd>
+                    <dt data-i18n="dashboard.dt.rights">Rights</dt>      <dd>{tokenRights.get()} <span class="meta">(bitfield)</span></dd>
+                    <dt data-i18n="dashboard.dt.status">Status</dt>      <dd>
+                        {#if tokenExpired.get()}
+                            <span class="badge down">EXPIRED</span>
+                        {#else}
+                            <span class="badge up">VALID</span>
+                        {/if}
+                    </dd>
+                    {#else}
+                    <dt data-i18n="dashboard.dt.status">Status</dt>     <dd><span class="badge warn">NO TOKEN</span> <span data-i18n="dashboard.tag.connectFirst">— connect first to acquire one.</span></dd>
+                    {/if}
+                </dl>
+
+                <hr>
+
+                <div class="btn-pair">
+                    <form hx-post="/api/v1/token/refresh"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit"{#if !tokenPresent} disabled{/if} data-i18n="dashboard.btn.refreshToken">Refresh token</button>
+                    </form>
+                    <form hx-post="/api/v1/token/kill"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" class="btn-disconnect"{#if !tokenPresent} disabled{/if} data-i18n="dashboard.btn.killToken">Kill token</button>
+                    </form>
+                </div>
+            </section>
+
+        </div><!-- /.dashboard-col MQTT Broker -->
+
+
+        <!-- Action feedback: full-width at the bottom (grid-column 1/-1).
+             Shows the JSON payload of the last HTMX action. -->
+        <section class="panel" style="grid-column: 1 / -1;">
+            <h2 data-i18n="dashboard.panel.metrics">Action feedback</h2>
+            <pre id="action-feedback" style="margin: 0; color: var(--fg-dim);"></pre>
+            <div id="action-refresh-marker" style="display: none; margin-top: 0.5rem; color: var(--accent); font-style: italic;"></div>
+        </section>
+        </section><!-- /#panel-dashboard -->
+    </main>
+
+    <footer>
+        <!-- Version / profile / rendered timestamp here in the footer.
+             Operator-visible at every page view but doesn't compete with
+             the logo + nav for attention up top. -->
+        <div class="meta">v{appVersion} · profile=<strong>{activeProfile}</strong> · rendered {renderedAt}</div>
+        <nav class="footer-links">
+            <a href="/q/health">/q/health</a> ·
+            <a href="/q/metrics">/q/metrics</a> ·
+            <a href="/q/openapi">/q/openapi</a> ·
+            <a href="/q/swagger-ui">/q/swagger-ui</a> ·
+            <a href="/api/v1/state">/api/v1/state</a>
+        </nav>
+    </footer>
+
+    <!--
+      Auto-refresh after a successful action.
+
+      Each action form in the .panel.actions block POSTs through HTMX and
+      swaps the API response into #action-feedback. The panels above
+      (Miniserver / Identity / Broker) are server-rendered
+      from /api/v1/state — they stay stale until the operator F5s.
+
+      Hook: any htmx:afterRequest whose source form lives inside
+      .panel.actions schedules a full page reload 1.2s later, so the
+      operator sees the API response briefly (success or error JSON)
+      and then the dashboard re-renders with fresh state.
+
+      Failure path (request did NOT succeed): we deliberately DON'T
+      reload — the error text in #action-feedback is what the operator
+      needs to read, and reloading would race away from it.
+    -->
+    <script>
+        (function () {
+            var REFRESH_DELAY_MS = 1200;
+            document.body.addEventListener('htmx:afterRequest', function (evt) {
+                var source = evt.detail && evt.detail.elt;
+                if (!source || !source.closest('.panel.actions')) return;
+                if (!evt.detail.successful) return; // leave failure visible
+
+                var marker = document.getElementById('action-refresh-marker');
+                marker.textContent = 'Refreshing dashboard in ' + (REFRESH_DELAY_MS / 1000) + 's…';
+                marker.style.display = 'block';
+                window.setTimeout(function () { window.location.reload(); }, REFRESH_DELAY_MS);
+            });
+        })();
+    </script>
+
+    <!--
+      Server-Sent Events auto-refresh.
+
+      Open an EventSource on /api/v1/state/stream. On every event
+      (session state transition, MQTT connected/disconnected) the
+      browser triggers a soft reload so the next render shows the
+      fresh state. Debounced to coalesce bursts (CONNECTING →
+      AWAITING_TOKEN → RUNNING fires three events in &lt; 500 ms
+      during a clean handshake).
+
+      The EventSource API auto-reconnects on its own if the SSE
+      connection drops — no manual retry loop needed. If the binding
+      itself goes down, the browser keeps retrying until the server
+      is back; the natural behaviour we want.
+
+      Refresh suppressed if the operator is currently typing in a
+      form (matches the htmx-action handler above — same precaution
+      against yanking input out from under the user).
+    -->
+    <script>
+        (function () {
+            if (typeof window.EventSource === 'undefined') return; // very old browsers
+            var DEBOUNCE_MS = 600;
+            var pending = null;
+            var es = new EventSource('/api/v1/state/stream');
+
+            function scheduleReload(reason) {
+                // Avoid stomping on the user typing in any input/textarea.
+                var active = document.activeElement;
+                if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+                    return;
+                }
+                if (pending !== null) window.clearTimeout(pending);
+                pending = window.setTimeout(function () {
+                    pending = null;
+                    window.location.reload();
+                }, DEBOUNCE_MS);
+                // Visual hint that something changed — surfaces in the
+                // action-refresh-marker if it exists. Best-effort UI.
+                var marker = document.getElementById('action-refresh-marker');
+                if (marker) {
+                    marker.textContent = 'State changed (' + reason + ') — refreshing…';
+                    marker.style.display = 'block';
+                }
+            }
+
+            es.onmessage = function (evt) {
+                try {
+                    var payload = JSON.parse(evt.data);
+                    // `type=state` events are consumed by the dedicated /states
+                    // page (LiveStatesResource). On the / dashboard we
+                    // ignore them (no table on this page + do NOT trigger
+                    // a soft reload that would rebuild the entire page).
+                    if (payload.type === 'state') return;
+                    scheduleReload(payload.type || 'unknown');
+                } catch (e) {
+                    // Malformed payload — reload anyway; whatever it was, server-side
+                    // observation will explain it on the refreshed dashboard.
+                    scheduleReload('event');
+                }
+            };
+            // onerror fires when the SSE connection drops — the browser
+            // re-tries on its own. No console noise in prod (operators
+            // see the connection status in the dashboard Health panel).
+
+            // Close the SSE stream on navigation away. Without this, the browser
+            // keeps the SSE socket open while the page unloads;
+            // the server sees a zombie subscriber until GC.
+            window.addEventListener('pagehide', function () {
+                if (es) es.close();
+                if (pending !== null) window.clearTimeout(pending);
+            });
+        })();
+    </script>
+
+    <!-- The States live feature lives on the separate `/states` page
+         (LiveStatesResource), with its own EventSource loop + its table
+         without a FIFO cap + dropdowns pre-filled from the LoxAPP3 topology. -->
+</body>
+</html>

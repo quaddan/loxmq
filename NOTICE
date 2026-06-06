@@ -1,0 +1,131 @@
+loxmq
+Copyright 2026 Daniel Abbati and the loxmq contributors
+
+This product includes software developed by Daniel Abbati (Quaddan).
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+================================================================================
+Third-party dependencies and attributions
+================================================================================
+
+This product bundles, depends on, or interfaces with the following third-party
+software at runtime. Each is distributed under its own license; refer to the
+respective project for the full license text.
+
+--------------------------------------------------------------------------------
+Quarkus (https://quarkus.io)
+   Apache License 2.0
+   Copyright Red Hat, Inc.
+
+   The runtime framework (CDI, Vert.x HTTP server, RESTEasy Reactive, Qute
+   templates, SmallRye Config / Health / OpenAPI / Fault Tolerance / Reactive
+   Messaging, OpenTelemetry, Hibernate Validator, JBoss Logging, etc.).
+
+--------------------------------------------------------------------------------
+HiveMQ MQTT Client (https://github.com/hivemq/hivemq-mqtt-client)
+   Apache License 2.0
+   Copyright dc-square GmbH and HiveMQ contributors
+
+   MQTT v5 client library used for broker connectivity. Pulled in through the
+   quarkus-hivemq-client Quarkiverse extension
+   (https://github.com/quarkiverse/quarkus-hivemq-client),
+   also Apache License 2.0.
+
+--------------------------------------------------------------------------------
+Eclipse Vert.x (https://vertx.io)
+   Apache License 2.0 / Eclipse Public License 2.0 (dual)
+   Copyright Red Hat, Inc. and the Eclipse Vert.x contributors
+
+   Underlying reactive event loop and HTTP server.
+
+--------------------------------------------------------------------------------
+Netty (https://netty.io)
+   Apache License 2.0
+   Copyright The Netty Project
+
+   Low-level networking transport used by Vert.x and HiveMQ Client.
+
+--------------------------------------------------------------------------------
+Jackson (https://github.com/FasterXML/jackson)
+   Apache License 2.0
+   Copyright FasterXML, LLC
+
+   JSON parsing and serialization for the Loxone protocol responses, the
+   management REST API and the MQTT payloads.
+
+--------------------------------------------------------------------------------
+Hibernate Validator (https://hibernate.org/validator/)
+   Apache License 2.0
+   Copyright Red Hat, Inc.
+
+   Bean Validation provider for the @ConfigMapping tree and the REST payloads.
+
+--------------------------------------------------------------------------------
+SmallRye projects (https://smallrye.io)
+   Apache License 2.0
+   Copyright Red Hat, Inc.
+
+   Eclipse MicroProfile implementations bundled by Quarkus (Config, Health,
+   OpenAPI, Fault Tolerance, Reactive Messaging, Mutiny).
+
+--------------------------------------------------------------------------------
+Micrometer (https://micrometer.io)
+   Apache License 2.0
+   Copyright VMware, Inc.
+
+   Application metrics facade with Prometheus exporter.
+
+--------------------------------------------------------------------------------
+GraalVM / Mandrel (https://www.graalvm.org / https://github.com/graalvm/mandrel)
+   GNU General Public License v2.0 with the Classpath exception (Mandrel)
+   Copyright Oracle and/or its affiliates, Red Hat, Inc.
+
+   AOT compiler used at build time to produce the native binary. Not bundled
+   into the binary itself; only the resulting native image is shipped.
+
+--------------------------------------------------------------------------------
+Testcontainers (https://www.testcontainers.org)
+   MIT License
+   Copyright Testcontainers contributors
+
+   Test-only — drives the Mosquitto Docker container for the integration tests.
+
+--------------------------------------------------------------------------------
+JUnit 5 (https://junit.org/junit5/)
+   Eclipse Public License 2.0
+   Copyright The JUnit Team
+
+   Test-only.
+
+--------------------------------------------------------------------------------
+AssertJ (https://assertj.github.io/doc/)
+   Apache License 2.0
+   Copyright The AssertJ authors
+
+   Test-only — fluent assertions.
+
+--------------------------------------------------------------------------------
+RestAssured (https://rest-assured.io)
+   Apache License 2.0
+   Copyright Johan Haleby and contributors
+
+   Test-only — REST endpoint integration assertions.
+
+--------------------------------------------------------------------------------
+Mockito (https://site.mockito.org)
+   MIT License
+   Copyright Mockito contributors
+
+   Test-only.
+
+--------------------------------------------------------------------------------
+Loxone protocol documentation
+   © Loxone Electronics GmbH
+
+   This project consumes the Loxone Miniserver WebSocket / HTTP protocol as
+   documented in the public Loxone Structure-File and "Communicating with the
+   Miniserver" specifications (V17.0). loxmq is an independent open-source
+   client; it is NOT affiliated with, endorsed by, or sponsored by Loxone
+   Electronics GmbH. "Loxone" and "Miniserver" are trademarks of their
+   respective owner.

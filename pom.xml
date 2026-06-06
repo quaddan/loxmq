@@ -1,0 +1,636 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.quaddan.iot</groupId>
+    <artifactId>loxmq</artifactId>
+    <version>1.0.0</version>
+    <packaging>quarkus</packaging>
+
+    <name>LoxMQ</name>
+    <description>
+        LoxMQ — Production-grade bridge between a Loxone Miniserver and an MQTT v5 broker.
+        Opens an encrypted WebSocket to a Miniserver (RSA + AES-CBC handshake, JWT tokens),
+        decodes binary event-tables (Value / Text / Daytimer / Weather) and republishes
+        controls state on an MQTT v5 broker for downstream consumers (Home Assistant, etc.).
+        Native-image capable, dashboard HTML, REST API.
+    </description>
+    <inceptionYear>2026</inceptionYear>
+    <url>https://github.com/quaddan/loxmq</url>
+
+    <developers>
+        <developer>
+            <id>quaddan</id>
+            <name>quaddan)</name>
+            <email>dev.quaddan@gmail.com</email>
+            <timezone>Europe/Paris</timezone>
+        </developer>
+    </developers>
+
+    <scm>
+        <url>https://github.com/quaddan/loxmq</url>
+        <connection>scm:git:https://github.com/quaddan/loxmq.git</connection>
+        <developerConnection>scm:git:https://github.com/quaddan/loxmq.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/quaddan/loxmq/issues</url>
+    </issueManagement>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <skipITs>true</skipITs>
+
+        <!-- Build target. Quarkus 3.36.1 officially supports Java 17 / 21 / 25 (LTS).
+         We target Java 25 LTS — Mandrel/GraalVM does NOT yet support Java 26
+         class files (bytecode v70). Setting the javac release flag to 25
+         produces v69 bytecode that Mandrel can analyse.
+
+         IMPORTANT: for the native-image build path, the host JDK that runs
+         Maven MUST also be Java 25. Quarkus Qute does build-time class
+         introspection of `java.lang.String` to generate value-resolvers; on
+         a JDK 26 host it bakes in references to JDK 26-only members
+         (UNICODE_CASEFOLD_ORDER / equalsFoldCase / compareToFoldCase from
+         JEP 525) which Mandrel (JDK 25) then cannot resolve. JVM mode and
+         `mvn test` work on a JDK 26 host because those resolvers stay
+         dormant; native does not.
+
+         Local native builds: export JAVA_HOME=/usr/lib/jvm/java-25-openjdk
+         before invoking `mvn package -Pnative`. CI uses setup-java with
+         java-version: 25. Bump everything back to 26 once Mandrel ships a
+         Java 26-capable build (Mandrel tracks LTS — likely the Java 29 LTS
+         cycle or whichever is next). -->
+        <java.version>25</java.version>
+        <maven.compiler.release>${java.version}</maven.compiler.release>
+
+        <maven.version>3.9.16</maven.version>
+        <maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
+
+        <!-- Quarkus 3.36.1 — current stable, October-November 2026 release window.
+             LTS support: 3.20, 3.27, and (planned) 3.43. We deliberately track the
+             non-LTS line on this rolling-current project; switch to the nearest
+             LTS branch for long-running production deployments if needed. -->
+        <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+        <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+        <quarkus.platform.version>3.36.1</quarkus.platform.version>
+
+        <!-- Plugins -->
+        <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+        <maven-surefire-plugin.version>3.5.6</maven-surefire-plugin.version>
+        <maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
+        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+
+        <!-- HiveMQ MQTT Client — MQTT v5, used directly (no Quarkus extension; SmallRye
+             Reactive Messaging MQTT is v3 only). -->
+        <!-- HiveMQ MQTT client is pulled via the Quarkiverse extension
+             `quarkus-hivemq-client` (see <dependencies>). The extension's
+             deployment module emits a RuntimeInitializedPackageBuildItem
+             for the entire `com.hivemq` package, which is what makes the
+             native-image build pass (the raw com.hivemq:hivemq-mqtt-client
+             dep blows up native-image on the Netty UnpooledByteBufAllocator$
+             InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf class). The
+             extension version targets the Quarkus 3.26.4 BOM internally; our
+             3.36.1 BOM overrides cleanly via import-scope (standard
+             Quarkiverse pattern).
+
+             Note: 2.5.0 ships a Jandex v10 index (generated with Jandex 2.x).
+             Quarkus 3.36 prefers v11+ (Jandex 3.x) and re-indexes at build
+             time with a warning:
+                 "Reindexing quarkus-hivemq-client-2.5.0.jar,
+                  at least Jandex 3.0 must be used (index version is 10)"
+             The warning is cosmetic (automatic re-indexing, ~150ms) and will
+             disappear once a re-indexed 2.6.0+ is released. Track
+             https://github.com/quarkiverse/quarkus-hivemq-client/releases
+             to bump at that point. -->
+        <quarkus-hivemq-client.version>2.5.0</quarkus-hivemq-client.version>
+        <hivemq-mqtt-client.version>1.3.14</hivemq-mqtt-client.version>
+
+        <!-- Testcontainers — used by integration tests under the `integration`
+             profile to stand up a real Mosquitto broker (and later, a fake
+             Loxone WS server) in Docker. Not in the Quarkus BOM. Pinned to
+             a current stable; bump alongside the JDK / Docker compatibility
+             matrix at https://www.testcontainers.org/supported_docker_environment/. -->
+        <!--        <testcontainers.version>1.20.4</testcontainers.version>-->
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.36.1's BOM manages the
+             entire io.netty.* stack (4.1.x line). Pinning netty-codec-http separately to
+             4.2.x dragged in netty-codec-base + netty-codec-compression while leaving
+             netty-handler / netty-codec / netty-transport at 4.1.x, breaking the HTTP
+             pipeline (server bound but TCP connections got no response). Let the BOM win. -->
+
+        <assertj-core.version>3.27.7</assertj-core.version>
+        <versions-maven-plugin.version>2.21.0</versions-maven-plugin.version>
+        <spotless-maven-plugin.version>3.6.0</spotless-maven-plugin.version>
+        <!-- spotless.skip — left at `false` by default (the check runs in CI).
+             Lets the operator bypass via `-Dspotless.skip=true` for rushed
+             releases if the linter trips on whitespace. -->
+        <spotless.skip>false</spotless.skip>
+        <org.graalvm.nativeimage.svm.version>25.0.3</org.graalvm.nativeimage.svm.version>
+
+        <!-- Test toggles. skipTests defaults to false here (Quarkus convention) so plain
+             `mvn package` actually runs the unit suite; CI flips this off explicitly.
+             Integration tests run via failsafe under the `integration` profile. -->
+        <skipTests>false</skipTests>
+        <skipITs>true</skipITs>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>${quarkus.platform.artifact-id}</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <!-- Core CDI / Quarkus runtime -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-arc</artifactId>
+        </dependency>
+
+        <!-- Config: MicroProfile Config + @ConfigMapping interfaces -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-config-yaml</artifactId>
+        </dependency>
+
+        <!-- Bean Validation: Hibernate Validator wired up for Quarkus + native -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
+        <!-- REST: management API. Resteasy Reactive — the modern, native-friendly stack. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-jackson</artifactId>
+        </dependency>
+
+        <!-- Qute templates: server-rendered management UI (small HTMX dashboard). -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-qute</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-qute</artifactId>
+        </dependency>
+
+        <!-- WebSockets Next: both server (potential future use) and client (the binding talks
+             to the Miniserver's WebSocket over WSS). The classic quarkus-websockets is *not*
+             used — Next is the recommended path since 3.16. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-websockets-next</artifactId>
+        </dependency>
+
+        <!-- Outbound HTTP: Rest Client Reactive — used for the synchronous bootstrap calls
+             to the miniserver (jdev/cfg/apiKey, jdev/sys/getPublicKey). Native-friendly. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+
+        <!-- MicroProfile Health: /q/health, /q/health/live, /q/health/ready -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+
+        <!-- Metrics: Micrometer + Prometheus exporter. Replaces the legacy MP Metrics. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Fault Tolerance: retries, circuit breakers, timeouts on miniserver / broker calls -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
+        </dependency>
+
+        <!-- OpenAPI + Swagger UI for the management endpoints. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+
+        <!-- OpenTelemetry: traces + logs. Off by default (no exporter configured); ready
+             when the operator wants to wire it up. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-opentelemetry</artifactId>
+        </dependency>
+
+        <!-- TLS registry: named TLS configurations referenced from application.yml
+             (server cert, optional miniserver truststore, broker truststore, etc.) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-tls-registry</artifactId>
+        </dependency>
+
+        <!-- Logging: Quarkus uses JBoss Logging by default. We install our own
+             LoxmqConsoleFormatter via LoggingProducers. No quarkus-logging-json
+             dep — that extension AUTO-INSTALLS a JSON formatter that wraps the
+             default console handler at deployment time and overrides any custom
+             Formatter we set in @PostConstruct, leaving the operator with
+             JSON-wrapped lines instead of the coloured console output. If we
+             ever ship to a JSON aggregator, re-add explicitly + set
+             quarkus.log.console.json=false on the dev profile only. -->
+
+        <!-- Jackson — extra config (JsonNode, ObjectMapper customization) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- ============================ -->
+        <!--  MQTT (HiveMQ via Quarkiverse extension)  -->
+        <!-- ============================ -->
+        <!-- The extension brings com.hivemq:hivemq-mqtt-client transitively
+             (currently 1.3.5 in 2.5.0 GA — our older direct dep was 1.3.14
+             but the BOM/extension override is acceptable; the public API
+             didn't change between 1.3.5 and 1.3.14). The deployment-time
+             RuntimeInitializedPackageBuildItem for `com.hivemq` is what
+             enables native-image builds. Builder API is unchanged —
+             `Mqtt5Client.builder().identifier(...)…` continues to work.
+             No `quarkus.hivemq.*` config is required: we drive the
+             builder ourselves from LoxoneConfig. -->
+        <dependency>
+            <groupId>io.quarkiverse.hivemqclient</groupId>
+            <artifactId>quarkus-hivemq-client</artifactId>
+            <version>${quarkus-hivemq-client.version}</version>
+            <!-- We do NOT use the extension's SmallRye Reactive Messaging
+                 MQTT connector — we drive HiveMQ directly via the builder
+                 API in our HiveMqClient bean. The connector bean
+                 (HiveMQMqttConnector) is excluded via
+                 quarkus.arc.exclude-types in application.yml to
+                 avoid a native-image STATIC_INIT vs RUNTIME_INIT clash:
+                 the connector @Injects ExecutionHolder which @Injects
+                 Vertx, but Vertx is a synthetic bean initialized at
+                 RUNTIME_INIT and may not be touched at STATIC_INIT.
+                 (A maven `<exclusion>` on smallrye-reactive-messaging-mqtt
+                 doesn't work — HiveMQMqttConnector lives inside the
+                 extension itself and still requires ExecutionHolder to
+                 resolve at deploy-time validation.) -->
+        </dependency>
+        <!-- GraalVM SVM annotations (@TargetClass, @Alias, @RecomputeFieldValue)
+             — used by util/graal/Target_JCTools.java to patch the standalone
+             JCTools array-index-scale recompute that GraalVM auto-registration
+             fails on. Provided scope: the API lives in svm.jar which IS the
+             native-image classpath, not the runtime classpath. JVM-mode builds
+             see the import but never load svm.jar (the @TargetClass class is
+             only meaningful at native build time anyway). -->
+        <dependency>
+            <groupId>org.graalvm.nativeimage</groupId>
+            <artifactId>svm</artifactId>
+            <!-- Version aligned with the org.graalvm.sdk:nativeimage 25.0.3
+                 that Quarkus 3.36.1 transitively brings via Mandrel. SVM
+                 is NOT managed by the Quarkus BOM so we pin explicitly. -->
+            <version>${org.graalvm.nativeimage.svm.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- Required at runtime by HiveMQ when WebSocket / WSS transport is in use.
+             Marked optional in HiveMQ's POM so it must be declared explicitly here.
+             No <version> on purpose: Quarkus 3.36.1's BOM manages the whole io.netty.*
+             stack as a coherent set (4.1.x line). See the property block comment for
+             the netty-codec-http 4.2 disaster story. -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-codec-http</artifactId>
+        </dependency>
+
+        <!-- ============================ -->
+        <!--             TESTS            -->
+        <!-- ============================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit-mockito</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- AssertJ — fluent assertions used by the validation tests. Not in
+             the Quarkus BOM so version is explicit. -->
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${assertj-core.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Testcontainers — real-broker integration tests under the
+             `integration` profile. Brings JNA + duct-tape via
+             transitive deps; we keep it scope=test so the production
+             classpath stays clean. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Vert.x core — used by the FakeMiniserverFullResource to host
+             a single Vert.x HttpServer that serves BOTH
+             the HTTP bootstrap endpoints AND a Jakarta-style WebSocket
+             endpoint on the same port. Picked Vert.x over Jetty / Tyrus
+             for two reasons:
+               1. Already on the classpath transitively via the
+                  Quarkus REST / WebSockets-Next stack — no version
+                  conflicts to manage.
+               2. Single-port HTTP+WS is one builder chain, vs Jetty's
+                  ServletContextHandler + WebSocketServerContainerInitializer
+                  ceremony.
+             Version comes from the Quarkus BOM (declared explicitly via
+             scope=test). -->
+        <dependency>
+            <groupId>io.vertx</groupId>
+            <artifactId>vertx-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>${quarkus.platform.group-id}</groupId>
+                <artifactId>quarkus-maven-plugin</artifactId>
+                <version>${quarkus.platform.version}</version>
+                <extensions>true</extensions>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>build</goal>
+                            <goal>generate-code</goal>
+                            <goal>generate-code-tests</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                    <parameters>true</parameters>
+                    <showDeprecation>true</showDeprecation>
+                    <!-- See https://docs.oracle.com/en/java/javase/25/docs/specs/man/javac.html#option-release for javac command -->
+                    <compilerArgs>
+                        <arg>-Xlint:all</arg>
+                        <arg>-Xlint:-processing</arg>
+                    </compilerArgs>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <skipTests>${skipTests}</skipTests>
+                    <systemPropertyVariables>
+                        <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        <maven.home>${maven.home}</maven.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>${maven-failsafe-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                        <configuration>
+                            <skipITs>${skipITs}</skipITs>
+                            <systemPropertyVariables>
+                                <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                                <maven.home>${maven.home}</maven.home>
+                                <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
+                                <!-- Force the packaged artifact to boot under the `dev` profile.
+                                     Rationale: only the `dev` overlay is packaged AND TLS-free
+                                     (staging/prod both pin to Let's Encrypt certs that don't exist
+                                     on the build host).
+
+                                     Note: do NOT use `quarkus.test.arg-line` for the profile name
+                                     itself — Quarkus's IT launcher hardcodes `-Dquarkus.profile=prod`
+                                     AFTER our args, so the `-D` order makes prod win. The dedicated
+                                     knob is `quarkus.test.integration-test-profile` (since Quarkus 3.4),
+                                     which the IntegrationTestExtension reads directly to pick the
+                                     profile name passed to the launched JAR / native binary. -->
+                                <quarkus.test.integration-test-profile>dev</quarkus.test.integration-test-profile>
+                                <!-- Disable the boot auto-start chain in the IT subprocess.
+                                     Base default is true (production wants the binding to come
+                                     up swinging), but the IT exercises the boot SURFACE — it
+                                     deliberately asserts sessionEstablished=false and
+                                     broker.connected=false. Without this override the IT result
+                                     would depend on whether the build host happens to reach the
+                                     LAN miniserver/broker. arg-line passes -D properties to the
+                                     subprocess JVM where the packaged artifact runs. -->
+                                <!-- Feed Base64-valid placeholder credentials to the IT subprocess.
+                                     The production defaults are the literal sentinel `CHANGE_ME`,
+                                     which is NOT valid Base64 (the `_` / 0x5f is outside the Base64
+                                     alphabet). Both credential families are Base64-decoded at use:
+                                       - transport (MQTT) creds in HiveMqClient.decodeBase64Opt,
+                                       - miniserver auth creds on the getkey2 handshake path.
+                                     With the sentinel those decodes throw "Illegal base64 character
+                                     5f", surfacing as HTTP 500 (broker endpoints, mqtt-broker health
+                                     check absent) and HTTP 502 (handshake_failed) in the ITs. Locally
+                                     a gitignored .env supplies real Base64 creds and masks this; CI
+                                     has no .env, so we inject well-formed placeholders here.
+                                     `enable=false` skips the MQTT simpleAuth decode entirely; the two
+                                     miniserver values are `fake_user` / `fake_pass` Base64-encoded
+                                     (same as src/test/resources/application.yml). The ITs never reach
+                                     a real broker/miniserver login, so the values only need to be
+                                     well-formed, not authentic.
+                                     NB: the property path is loxone.miniserver.SECURITY.credentials.*
+                                     (mirrors loxone.transport.security.credentials.*), NOT `.auth.*`.
+                                     `LOXONE_MINISERVER_AUTH_USER` in application.yml is only the
+                                     default-expansion env alias; a system property must use the exact
+                                     @ConfigMapping path or SmallRye aborts startup with
+                                     SRCFG00050 "does not map to any root". -->
+                                <quarkus.test.arg-line>-Dloxone.boot.auto-start=false -Dloxone.transport.security.credentials.enable=false -Dloxone.miniserver.security.credentials.user=ZmFrZV91c2Vy -Dloxone.miniserver.security.credentials.password=ZmFrZV9wYXNz</quarkus.test.arg-line>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Maven Enforcer -->
+            <!--
+                Description: Control certain environmental constraints such as Maven version, JDK version and OS family along with many more built-in rules and user created rules.
+
+                The Enforcer plugin has two goals:
+
+                    1. enforcer:enforce         Executes rules for each project in a multi-project build.
+
+                    2. enforcer:display-info    Display the current information as detected by the built-in rules.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${maven-enforcer-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce-minimum versions</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>${java.version}</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>${maven.version}</version>
+                                </requireMavenVersion>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- versions-maven-plugin — maintenance tooling to watch for
+                 dependency + plugin updates. Not bound to the default build
+                 lifecycle; invoked by hand by the maintainer.
+
+                 Useful commands:
+                   mvn versions:display-dependency-updates
+                     → lists deps that have a newer version available
+                   mvn versions:display-plugin-updates
+                     → same for plugins
+                   mvn versions:display-property-updates
+                     → same for <properties> (handy for
+                       quarkus.platform.version, hivemq-client.version,
+                       testcontainers.version, etc.)
+                   mvn versions:set -DnewVersion=1.1.0
+                     → bump the artifact version (used at release time).
+
+                 Pinned to the latest 2.x stable. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>versions-maven-plugin</artifactId>
+                <version>${versions-maven-plugin.version}</version>
+            </plugin>
+
+            <!-- spotless-maven-plugin — lint-only baseline to keep style from
+                 drifting on future PRs / contributions. Deliberately minimal:
+                   - trimTrailingWhitespace + endWithNewline : pure file hygiene
+                   - removeUnusedImports                    : dead `import foo.Bar;`
+                 NO importOrder and NO java() formatter: preserves the manual
+                 convention (Allman braces, spaces inside parens, author's own
+                 import order) — that's the author's style; re-formatting it is
+                 out of scope.
+
+                 Bind `check` to the `verify` phase: `mvn verify` fails if trailing
+                 whitespace or a dead import reappears. Skippable via -Dspotless.skip
+                 when the operator wants a quick release without blocking on it.
+
+                 Contributor workflow:
+                   mvn spotless:check    — show the diffs (no changes)
+                   mvn spotless:apply    — fix in place
+            -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless-maven-plugin.version}</version>
+                <configuration>
+                    <skip>${spotless.skip}</skip>
+                    <java>
+                        <includes>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
+                        </includes>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                        <removeUnusedImports/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotless-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <!-- Activate explicitly to run integration tests (IT*.java / *IT.java).
+             Designed for the real-broker / real-miniserver smoke; see ARCHITECTURE.md
+             §Tests for the topology.
+
+             Sets quarkus.profile=dev at BUILD time so the packaged jar has zero
+             TLS config baked in (the TLS Registry is build-time-aware — even a
+             runtime `-Dquarkus.profile=dev` cannot un-bake the prod LE keystore
+             config). Failsafe then launches that same dev-flavoured jar with
+             `quarkus.test.integration-test-profile=dev` for the runtime side.
+             Result: HTTP-only on port 8081, no certs required. -->
+        <profile>
+            <id>integration</id>
+            <properties>
+                <skipITs>false</skipITs>
+                <quarkus.profile>dev</quarkus.profile>
+            </properties>
+        </profile>
+
+        <!-- Native image. Activate with `mvn package -Pnative`. Requires Mandrel /
+             GraalVM 23+ installed and visible via $GRAALVM_HOME, OR set
+             quarkus.native.container-build=true to delegate the build to a Mandrel
+             container (no local GraalVM install needed). -->
+        <profile>
+            <id>native</id>
+            <activation>
+                <property>
+                    <name>native</name>
+                </property>
+            </activation>
+            <properties>
+                <quarkus.native.enabled>true</quarkus.native.enabled>
+                <quarkus.package.jar.enabled>false</quarkus.package.jar.enabled>
+                <!-- Native tests are slow (full native build + run). Skip them in the
+                     regular `mvn package -Pnative`; opt-in via -Pnative,integration. -->
+                <skipITs>true</skipITs>
+            </properties>
+        </profile>
+    </profiles>
+</project>

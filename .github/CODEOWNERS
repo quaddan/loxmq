@@ -1,0 +1,8 @@
+# CODEOWNERS — https://docs.github.com/articles/about-code-owners
+#
+# GitHub automatically requests a review from the listed owners whenever a
+# pull request touches a matching path. Owners must have write access to the
+# repository. The last matching pattern takes precedence.
+
+# Default owner for everything in the repository.
+* @quaddan

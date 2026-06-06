@@ -1,0 +1,118 @@
+[Unit]
+Description = LoxMQ (native binary)
+Documentation = https://github.com/quaddan/loxmq.git
+After = network-online.target
+Wants = network-online.target
+
+# Mutually exclusive with the JVM unit. Both bind the same HTTP port (8443)
+# and publish the same LWT `…/status` retained on MQTT — running both at
+# once would cause: (a) the second-started one would fail at boot with
+# "Address already in use", (b) the LWT race would publish flapping
+# online/offline. Conflicts= makes systemd stop -jvm if a start of -native
+# is requested (and vice-versa).
+Conflicts = loxmq-jvm.service
+
+# Crash-loop guard: 3 starts in 5 min then stop. Avoids hammering
+# certbot / DNS when the config is broken. Must live in [Unit] (not
+# [Service]) — otherwise `systemd-analyze verify` warns "Unknown key".
+StartLimitIntervalSec = 300
+StartLimitBurst = 3
+
+[Service]
+Type = simple
+User = loxmq
+Group = loxmq
+
+# Working directory must contain the native binary at /opt/loxmq/loxmq
+# (the artifactId-derived target/loxmq-*-runner renamed at deploy time).
+# For the fast-jar packaging, see loxmq-jvm.service.
+WorkingDirectory = /opt/loxmq
+
+# Profile — sourced from /etc/loxmq/env (key `QUARKUS_PROFILE`).
+# Not hardcoded here: setting `Environment=QUARKUS_PROFILE=prod` in the unit
+# would break the staging deployment — the unit file is shared between the two
+# environments; it is the LXC-specific env file (`staging` vs `prod`) that
+# distinguishes them. `scripts/bootstrap/{staging,prod}_bootstrap.sh` sets the right value.
+# Expected values: `staging` or `prod` (do NOT use `production` —
+# Quarkus would look for `application-production.yml`, which does not exist,
+# and would silently fall back to the base config = disaster in prod).
+
+# Secrets that must NOT be in any config file under version control.
+# The operator should populate /etc/loxmq/env with restrictive
+# perms (0640) before enabling the unit. Expected keys — all four credentials
+# are Base64-encoded (see .env.example) :
+#   LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER
+#   LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD
+#   LOXONE_MINISERVER_AUTH_USER
+#   LOXONE_MINISERVER_AUTH_PASSWORD
+EnvironmentFile = -/etc/loxmq/env
+
+# Redirects the Quarkus file handler to a path that the hardening
+# allows writing to (ReadWritePaths below). Without this line, Quarkus tries
+# to write to WorkingDirectory/logs = /opt/loxmq/logs/, which is READONLY
+# (ProtectSystem=strict), and the main log + the commands log
+# never reach the disk — the operator only has journalctl.
+Environment = "LOG_DIR=/var/lib/loxmq/logs"
+# Same problem as LOG_DIR: the default value
+# `loxone.miniserver.cache.directory=cache` (relative) resolved under
+# /opt/loxmq/cache/, which is readonly. CACHE_DIR=/var/lib/...
+# redirects to the writable path (cf. ReadWritePaths below + directory
+# created by scripts/bootstrap/{staging,prod}_bootstrap.sh).
+Environment = "CACHE_DIR=/var/lib/loxmq/cache"
+
+# Stdout + stderr to journald — `journalctl -u loxmq-native.service`
+# is the canonical observation channel referenced by ARCHITECTURE.md §12
+# cutover plan.
+StandardOutput = journal
+StandardError = journal
+SyslogIdentifier = loxmq-native
+
+# Native binary — no JVM tuning. GraalVM/Mandrel handles GC + heap internally
+# (Serial GC by default, scales fine for this binding's allocation profile
+# per the production validation). Run flags are passed via
+# `-Dquarkus.*` if needed (cf. README §"Quick start § Native image" for
+# common overrides); env vars from EnvironmentFile= above are the canonical
+# way to inject secrets / profile-specific knobs.
+#
+# Why no JFR : JFR support in native-image is platform-dependent and emits
+# a spurious WARN at startup on some Mandrel versions. The native binary
+# trades JFR for a much smaller RSS (~50–80 MB vs ~250 MB for the fast-jar)
+# and ~50 ms cold start (vs ~2 s). For post-mortem, journald +
+# `logs/application.log` (file handler) carry the
+# observation budget.
+ExecStart = /opt/loxmq/loxmq
+
+# Restart policy — same shape as the JVM unit. 45 s back-off is enough to
+# avoid hammering certbot / DNS resolution when a transient outage trips the
+# binding. RestartMode=direct so the binding goes through its @PreDestroy
+# disconnect cleanly before relaunch.
+Restart = on-failure
+RestartMode = direct
+RestartSec = 45s
+TimeoutStopSec = 30s
+
+# File descriptors — one socket per MQTT connection + WebSocket to miniserver
+# + a few RestEasy worker channels. Default 1024 is fine but let's pin it so a
+# host-wide ulimit change doesn't silently starve the binding.
+LimitNOFILE = 4096
+
+# Hardening — read-only filesystem except for the cache directory.
+# (No JFR repository ReadWrite needed — native doesn't ship JFR.)
+ProtectSystem = strict
+ProtectHome = read-only
+ReadWritePaths = /var/lib/loxmq
+
+PrivateTmp = true
+PrivateDevices = true
+NoNewPrivileges = true
+ProtectKernelTunables = true
+ProtectKernelModules = true
+ProtectControlGroups = true
+RestrictSUIDSGID = true
+
+# AmbientCapabilities allows binding to privileged ports if you want :443
+# instead of :8443. Default to non-privileged.
+# AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy = multi-user.target

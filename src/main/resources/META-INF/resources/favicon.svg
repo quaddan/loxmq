@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  favicon.svg — derived from loxmq-logo.svg: the bridge motif reduced to
+  its two anchors — the emerald Loxone "smart-home" glyph on the left and
+  the violet MQTT broker rings on the right, with the signature red accent
+  at the broker core. No tagline, no wordmark — kept legible down to
+  16x16. Same colour language as the full logo so the browser-tab icon and
+  the logo read as one family.
+-->
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LoxMQ">
+    <title>LoxMQ</title>
+
+    <!-- LEFT: Loxone smart-home glyph (pentagon house outline + halo) -->
+    <path d="M 3,49 L 3,30 L 16,15 L 29,30 L 29,49 Z" fill="#10B981" opacity="0.10"/>
+    <path d="M 3,49 L 3,30 L 16,15 L 29,30 L 29,49 Z"
+          fill="none" stroke="#10B981" stroke-width="4"
+          stroke-linejoin="round" stroke-linecap="round"/>
+
+    <!-- RIGHT: MQTT broker (concentric rings) with the signature red core -->
+    <circle cx="47" cy="32" r="13"  fill="#8B5CF6" opacity="0.10"/>
+    <circle cx="47" cy="32" r="12"  fill="none" stroke="#8B5CF6" stroke-width="3.5"/>
+    <circle cx="47" cy="32" r="6.5" fill="none" stroke="#3B82F6" stroke-width="3"/>
+    <circle cx="47" cy="32" r="3"   fill="#EF4444"/>
+</svg>
