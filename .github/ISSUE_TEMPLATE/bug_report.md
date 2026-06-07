@@ -4,6 +4,7 @@ about: Report something that is not working as documented
 title: "[BUG] "
 labels: bug
 assignees: ''
+
 ---
 
 ## Describe the bug
