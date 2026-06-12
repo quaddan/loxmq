@@ -244,7 +244,7 @@ curl -fsS http://localhost:8080/api/v1/state | jq -r '.app.version'
 **Server side (still possible)**: browser disconnects abruptly
 → cosmetic `StacklessClosedChannelException` (silenced via a configured
 log filter). If we still see these stacktraces, check the log
-config in `application.yml`.
+config in `application.yaml`.
 
 **Browser side**: try another tab / another browser → if OK,
 local problem; otherwise server problem.
@@ -289,7 +289,7 @@ du -sh /var/lib/loxmq/logs/
 
 If 30 backups isn't enough disk headroom (huge event volume), reduce
 `quarkus.log.handler.file.*.rotation.max-file-size` /
-`max-backup-index` in `application.yml` then redeploy. Or purge manually:
+`max-backup-index` in `application.yaml` then redeploy. Or purge manually:
 
 ```bash
 # Purge all but the last 7 days.
@@ -328,7 +328,7 @@ curl -fsS http://localhost:8080/q/metrics | head -20
 # If empty: micrometer/prometheus config is baked into the artifact (native
 # binary, or quarkus-app/ jar for the JVM build) — no standalone file on the
 # LXC. Check for a runtime override in the env file (else see the source
-# application.yml, quarkus.micrometer.* keys):
+# application.yaml, quarkus.micrometer.* keys):
 grep -iE 'micrometer|prometheus|metrics' /etc/loxmq/env
 ```
 
@@ -529,5 +529,5 @@ code or config change, a new patch:
 
 ---
 
-*Doc created. Keep in sync with `application.yml`
+*Doc created. Keep in sync with `application.yaml`
 (endpoints, port 8443/8080).*

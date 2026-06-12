@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>SINGLE is the default mode, so
  * no {@code @TestProfile} override is needed — just the default
- * {@code loxone.transport.mode=SINGLE} from {@code application.yml}.
+ * {@code loxone.transport.mode=SINGLE} from {@code application.yaml}.
  *
  * <p>Assertions focus on the per-UUID publish behaviour:
  * <ul>

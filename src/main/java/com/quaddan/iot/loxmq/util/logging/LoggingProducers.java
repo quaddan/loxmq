@@ -130,7 +130,7 @@ public class LoggingProducers
             "org.jboss.logmanager.handlers.ConsoleHandler";
 
     /** Basename of the dedicated WARN log — matches
-     *  {@code quarkus.log.handler.file.warns.path} in application.yml. */
+     *  {@code quarkus.log.handler.file.warns.path} in application.yaml. */
     private static final String WARN_LOG_FILENAME = "warn.log";
 
     /** Strict WARN-only gate for {@code warn.log}: accepts a record only

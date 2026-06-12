@@ -1,0 +1,82 @@
+# ============================================================================
+# Native container image on Debian 13 "trixie" — single dynamically-linked
+# binary. Final image ≈ 110 MB (debian:13-slim ≈ 30 MB + ~90 MB runner).
+#
+# Why a Debian base alongside docker/Dockerfile.native (UBI-micro): some sites
+# standardise their whole fleet on Debian/glibc. The Quarkus native runner is
+# dynamically linked against glibc + zlib only — verified with:
+#
+#     ldd target/*-runner
+#         libz.so.1 => /lib64/libz.so.1
+#         libc.so.6 => /lib64/libc.so.6
+#
+# both shipped in debian:13-slim, so the binary runs as-is. We add only:
+#   • ca-certificates — system trust roots, belt-and-braces over the JDK
+#     cacerts already embedded in the native image at build time. Used to
+#     validate the Let's Encrypt chains the binding talks to (Miniserver
+#     CloudDNS cert + MQTT broker wildcard).
+#   • tzdata — without it the JVM falls back to UTC; we want local-time stamps
+#     in the rotated log files.
+#
+# This file produces the PUBLISHED `quaddan/loxmq:native` image (Docker Hub).
+# The UBI-micro variant in docker/Dockerfile.native is a smaller maintainer-
+# local alternative and is not published.
+#
+# Build:
+#   mvn package -Pnative -Dquarkus.profile=prod -Dquarkus.native.container-build=true
+#   docker build -f docker/Dockerfile.debian -t quaddan/loxmq:native .
+#
+# Run (compose is the supported path — see docker-compose.yml at the repo root):
+#   docker run -d --restart=always \
+#     -p 8443:8443 \
+#     -v /opt/loxmq/certs:/opt/loxmq/certs:ro \
+#     -v /var/lib/loxmq/logs:/var/lib/loxmq/logs \
+#     -v /var/lib/loxmq/cache:/var/lib/loxmq/cache \
+#     --env-file .env \
+#     -e QUARKUS_PROFILE=prod \
+#     --name loxmq \
+#     quaddan/loxmq:debian
+# ============================================================================
+
+FROM debian:13-slim
+
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        tzdata \
+ && rm -rf /var/lib/apt/lists/*
+
+# Non-root user. UID/GID 185 matches docker/Dockerfile.jvm so bind-mounted
+# volumes (certs/logs/cache) inherit a stable, predictable ownership whichever
+# image you run.
+RUN groupadd --system --gid 185 loxmq \
+ && useradd  --system --uid 185 --gid 185 --home /work --shell /usr/sbin/nologin loxmq \
+ && mkdir -p /work \
+             /opt/loxmq/certs \
+             /var/lib/loxmq/logs \
+             /var/lib/loxmq/cache \
+ && chown -R 185:185 /work /var/lib/loxmq
+
+WORKDIR /work
+
+# The Quarkus native binary built by `mvn package -Pnative`. Default name is
+# <artifactId>-<version>-runner; renamed to /work/application so the path baked
+# into ENTRYPOINT never changes across releases.
+COPY --chmod=555 target/*-runner /work/application
+
+# Map the ${LOG_DIR:logs} / ${CACHE_DIR:cache} placeholders in application.yml
+# onto the systemd-style fleet layout (see service/loxmq-*.service). These dirs
+# are bind-mounted as volumes in compose.
+#   LANG=C.UTF-8 — always available in debian:13-slim (no `locales` package
+#   needed), keeps the JVM file.encoding on UTF-8.
+ENV LOG_DIR=/var/lib/loxmq/logs \
+    CACHE_DIR=/var/lib/loxmq/cache \
+    LANG=C.UTF-8
+
+USER 185
+
+# 8080 = plain HTTP (prod/staging redirect → 8443), 8443 = HTTPS / dashboard.
+# Native images skip JFR (see docker/Dockerfile.native), so no JFR flags here.
+EXPOSE 8080 8443
+ENTRYPOINT [ "/work/application", \
+             "-Dquarkus.http.host=0.0.0.0" ]

@@ -995,7 +995,7 @@ public interface LoxoneConfig
                 String messageOffline();
 
                 /** Status topic. Defaults to {@code {root}/{app.id}/status} via
-                 *  property interpolation in {@code application.yml}. */
+                 *  property interpolation in {@code application.yaml}. */
                 @NotBlank
                 String topic();
 

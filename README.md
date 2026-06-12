@@ -1,5 +1,7 @@
 <img src="src/main/resources/META-INF/resources/images/loxmq-logo.svg" alt="loxmq">
 
+[![CI](https://github.com/quaddan/loxmq/actions/workflows/ci.yml/badge.svg)](https://github.com/quaddan/loxmq/actions/workflows/ci.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/quaddan/loxmq)](https://hub.docker.com/r/quaddan/loxmq)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/java-25%20LTS-orange.svg)](https://openjdk.org/projects/jdk/25/)
 [![Quarkus](https://img.shields.io/badge/quarkus-3.36.1-4695EB.svg)](https://quarkus.io)
@@ -218,6 +220,23 @@ mutually exclusive units — `loxmq-jvm.service` (fast-jar) or
 release scripts that automate it are operator-specific and stay out of the
 public repository.
 
+### Run with Docker (no Java toolchain needed)
+
+Pre-built images are published on Docker Hub at
+**[`quaddan/loxmq`](https://hub.docker.com/r/quaddan/loxmq)** — `:jvm`
+(multi-arch incl. ARM, also `:latest`) and `:native` (x86-64). Pull and run
+with Compose; you only configure `.env`, drop your TLS cert in `./certs`, and
+read the logs:
+
+```bash
+cp .env.example .env                                   # edit hosts/creds/app id
+mkdir -p certs logs cache config                       # cert + key → ./certs
+docker compose -f docker-compose.published.yml up -d
+```
+
+Full walkthrough — configuration, certificates, logs, updates — in
+**[`docker/README.md`](./docker/README.md)**.
+
 ---
 
 ## Platform support
@@ -256,7 +275,7 @@ handled.
 
 | Aspect               | Value                                                                                                                                                                                                                  |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Version              | **1.0.0** — first public release                                                                                                                                                                                       |
+| Version              | **1.0.1** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
 | Stack                | Java 25 LTS · Quarkus 3.36.1 · `quarkus-hivemq-client` 2.5.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
 | MicroProfile         | Health · Metrics (Micrometer) · OpenAPI · Fault Tolerance · Config                                                                                                                                                     |
 | TLS                  | Wildcard `*.<domain>` Let's Encrypt on the binding's HTTP server side. On the Miniserver side: automatic resolution based on `httpsStatus` returned by `jdev/cfg/apiKey` (transparent plain/secure switch).            |

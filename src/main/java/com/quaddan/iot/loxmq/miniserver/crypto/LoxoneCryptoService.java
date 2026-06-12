@@ -5,21 +5,6 @@
 
 package com.quaddan.iot.loxmq.miniserver.crypto;
 
-import com.quaddan.iot.loxmq.config.LoxoneConfig;
-import jakarta.annotation.PostConstruct;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import org.jboss.logging.Logger;
-
-import javax.crypto.BadPaddingException;
-import javax.crypto.Cipher;
-import javax.crypto.IllegalBlockSizeException;
-import javax.crypto.KeyGenerator;
-import javax.crypto.Mac;
-import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -36,6 +21,24 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.regex.Pattern;
+
+import javax.crypto.BadPaddingException;
+import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
+import javax.crypto.KeyGenerator;
+import javax.crypto.Mac;
+import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+
+import org.jboss.logging.Logger;
+
+import com.quaddan.iot.loxmq.config.LoxoneConfig;
+
+import jakarta.annotation.PostConstruct;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 /**
  * Cryptographic operations for the Miniserver session.
@@ -78,17 +81,17 @@ import java.util.regex.Pattern;
 @ApplicationScoped
 public class LoxoneCryptoService
 {
-    private static final Logger    LOG = Logger.getLogger( LoxoneCryptoService.class );
-    private static final HexFormat HEX = HexFormat.of();
+    private static final Logger    LOG          = Logger.getLogger(LoxoneCryptoService.class);
+    private static final HexFormat HEX          = HexFormat.of();
 
     /**
      * Matches the {@code \0} null-terminator plus any AES-block padding bytes
      * left in a decrypted control string. Compiled once.
      */
-    private static final Pattern NULL_PADDING = Pattern.compile( "\0+.*$" );
+    private static final Pattern   NULL_PADDING = Pattern.compile("\0+.*$");
 
     @Inject
-    LoxoneConfig config;
+    LoxoneConfig                   config;
 
     // ---------- immutable session state (set once at @PostConstruct) ----------
 
@@ -96,13 +99,13 @@ public class LoxoneCryptoService
     private SecretKey       aesKey;
     private IvParameterSpec ivSpec;
 
-    private String aesTransformation;          // e.g. "AES/CBC/PKCS5Padding"
-    private String rsaTransformation;          // e.g. "RSA/ECB/PKCS1Padding"
-    private String defaultDigestAlgorithm;     // e.g. "SHA-256"
-    private String defaultMacAlgorithm;        // e.g. "HmacSHA256"
+    private String          aesTransformation;          // e.g. "AES/CBC/PKCS5Padding"
+    private String          rsaTransformation;          // e.g. "RSA/ECB/PKCS1Padding"
+    private String          defaultDigestAlgorithm;     // e.g. "SHA-256"
+    private String          defaultMacAlgorithm;        // e.g. "HmacSHA256"
 
-    private Pattern saltPrefixPattern;         // strip leading "salt/<salt>/"
-    private Pattern nextSaltPrefixPattern;     // strip leading "nextSalt/<prev>/<new>/"
+    private Pattern         saltPrefixPattern;         // strip leading "salt/<salt>/"
+    private Pattern         nextSaltPrefixPattern;     // strip leading "nextSalt/<prev>/<new>/"
 
     // ---------- mutable session state ----------
 
@@ -110,10 +113,10 @@ public class LoxoneCryptoService
     private volatile PublicKey miniserverRsaPublicKey;
 
     /** Current outbound-command salt (URL-encoded hex). */
-    private String currentSalt;
+    private String             currentSalt;
 
     /** Epoch-seconds at which {@link #currentSalt} was generated. */
-    private long currentSaltCreatedAt;
+    private long               currentSaltCreatedAt;
 
     // ==========================================================================
     //  Init
@@ -122,7 +125,7 @@ public class LoxoneCryptoService
     @PostConstruct
     void init()
     {
-        LOG.debug( "Initialising LoxoneCryptoService..." );
+        LOG.debug("Initialising LoxoneCryptoService...");
 
         // Cache config-driven transformation strings.
         aesTransformation      = config.miniserver().crypto().encryptCommand().transformation();
@@ -142,11 +145,13 @@ public class LoxoneCryptoService
         // Pre-compile salt-prefix strip patterns. The prefixes themselves
         // are config-driven so this happens once at @PostConstruct.
         saltPrefixPattern     = Pattern.compile(
-                "^" + Pattern.quote( config.miniserver().cmd().prefix().salt() ) + "[^/]*/" );
+                                                "^" + Pattern.quote(config.miniserver().cmd().prefix().salt())
+                                                + "[^/]*/");
         nextSaltPrefixPattern = Pattern.compile(
-                "^" + Pattern.quote( config.miniserver().cmd().prefix().nextSalt() ) + "[^/]*/[^/]*/" );
+                                                "^" + Pattern.quote(config.miniserver().cmd().prefix().nextSalt())
+                                                + "[^/]*/[^/]*/");
 
-        LOG.debug( "LoxoneCryptoService initialised." );
+        LOG.debug("LoxoneCryptoService initialised.");
     }
 
     // ==========================================================================
@@ -158,26 +163,26 @@ public class LoxoneCryptoService
      * SubjectPublicKeyInfo DER, as returned by {@code jdev/sys/getPublicKey}).
      * Idempotent; the orchestrator calls this once per handshake.
      */
-    public void loadPublicKey( String base64Der )
+    public void loadPublicKey(String base64Der)
     {
-        if ( base64Der == null || base64Der.isBlank() )
+        if (base64Der == null || base64Der.isBlank())
         {
             throw new LoxoneCryptoException(
-                    "Cannot load Miniserver public key: payload is null or blank" );
+                                            "Cannot load Miniserver public key: payload is null or blank");
         }
         try
         {
-            KeyFactory keyFactory = KeyFactory.getInstance(
-                    config.miniserver().crypto().encryptKey().algo() );
-            byte[]             keyData = Base64.getDecoder().decode( base64Der );
-            X509EncodedKeySpec spec    = new X509EncodedKeySpec( keyData );
-            miniserverRsaPublicKey = keyFactory.generatePublic( spec );
-            LOG.debugf( "Miniserver public key loaded (%d bits)",
-                        ( ( java.security.interfaces.RSAPublicKey ) miniserverRsaPublicKey ).getModulus().bitLength() );
+            KeyFactory         keyFactory = KeyFactory.getInstance(
+                                                                   config.miniserver().crypto().encryptKey().algo());
+            byte[]             keyData    = Base64.getDecoder().decode(base64Der);
+            X509EncodedKeySpec spec       = new X509EncodedKeySpec(keyData);
+            miniserverRsaPublicKey = keyFactory.generatePublic(spec);
+            LOG.debugf("Miniserver public key loaded (%d bits)",
+                       ((java.security.interfaces.RSAPublicKey) miniserverRsaPublicKey).getModulus().bitLength());
         }
-        catch ( NoSuchAlgorithmException | InvalidKeySpecException | IllegalArgumentException e )
+        catch (NoSuchAlgorithmException | InvalidKeySpecException | IllegalArgumentException e)
         {
-            throw new LoxoneCryptoException( "Failed to parse Miniserver public key", e );
+            throw new LoxoneCryptoException("Failed to parse Miniserver public key", e);
         }
     }
 
@@ -196,18 +201,21 @@ public class LoxoneCryptoService
     public String wrappedSessionKey()
     {
         requirePublicKey();
-        String plain = HEX.formatHex( aesKey.getEncoded() ) + ":" + HEX.formatHex( ivSpec.getIV() );
+        String plain = HEX.formatHex(aesKey.getEncoded()) + ":" + HEX.formatHex(ivSpec.getIV());
         try
         {
-            Cipher rsa = Cipher.getInstance( rsaTransformation );
-            rsa.init( Cipher.PUBLIC_KEY, miniserverRsaPublicKey );
-            byte[] wrapped = rsa.doFinal( plain.getBytes( StandardCharsets.UTF_8 ) );
-            return Base64.getEncoder().encodeToString( wrapped );
+            Cipher rsa = Cipher.getInstance(rsaTransformation);
+            rsa.init(Cipher.PUBLIC_KEY, miniserverRsaPublicKey);
+            byte[] wrapped = rsa.doFinal(plain.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(wrapped);
         }
-        catch ( NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException
-                | IllegalBlockSizeException | BadPaddingException e )
+        catch (NoSuchAlgorithmException
+               | NoSuchPaddingException
+               | InvalidKeyException
+               | IllegalBlockSizeException
+               | BadPaddingException e)
         {
-            throw new LoxoneCryptoException( "Failed to RSA-wrap the AES session key", e );
+            throw new LoxoneCryptoException("Failed to RSA-wrap the AES session key", e);
         }
     }
 
@@ -224,15 +232,15 @@ public class LoxoneCryptoService
      * (SHA-1 / SHA-256, HmacSHA1 / HmacSHA256). Falls back to the config
      * defaults if the field is absent (older firmware).
      */
-    public String createUserHash( String miniserverUser,
-                                  String miniserverPassword,
-                                  KeyAndSalt keyAndSalt )
+    public String createUserHash(String miniserverUser,
+                                 String miniserverPassword,
+                                 KeyAndSalt keyAndSalt)
     {
-        String digestAlgo = resolveDigestAlgorithm( keyAndSalt.hashAlg() );
-        String macAlgo    = resolveMacAlgorithm( keyAndSalt.hashAlg() );
+        String digestAlgo     = resolveDigestAlgorithm(keyAndSalt.hashAlg());
+        String macAlgo        = resolveMacAlgorithm(keyAndSalt.hashAlg());
 
-        String hashedPassword = passwordHash( miniserverPassword, keyAndSalt );
-        return hmac( miniserverUser + ":" + hashedPassword, keyAndSalt.key(), macAlgo );
+        String hashedPassword = passwordHash(miniserverPassword, keyAndSalt);
+        return hmac(miniserverUser + ":" + hashedPassword, keyAndSalt.key(), macAlgo);
     }
 
     /**
@@ -250,10 +258,10 @@ public class LoxoneCryptoService
      * directly in the {@code jdev/sps/updateuser*pwdh/{uuid}/{hash}}
      * path without any further encoding.
      */
-    public String passwordHash( String plaintext, KeyAndSalt keyAndSalt )
+    public String passwordHash(String plaintext, KeyAndSalt keyAndSalt)
     {
-        String digestAlgo = resolveDigestAlgorithm( keyAndSalt.hashAlg() );
-        return digest( plaintext + ":" + keyAndSalt.salt(), digestAlgo ).toUpperCase();
+        String digestAlgo = resolveDigestAlgorithm(keyAndSalt.hashAlg());
+        return digest(plaintext + ":" + keyAndSalt.salt(), digestAlgo).toUpperCase();
     }
 
     /**
@@ -261,9 +269,9 @@ public class LoxoneCryptoService
      * configured {@link #defaultMacAlgorithm}. Used to sign each subsequent
      * use of the JWT token in {@code jdev/sys/authwithtoken/{hash}/{user}}.
      */
-    public String hashToken( String hexKey, String token )
+    public String hashToken(String hexKey, String token)
     {
-        return hmac( token, hexKey, defaultMacAlgorithm );
+        return hmac(token, hexKey, defaultMacAlgorithm);
     }
 
     /**
@@ -274,22 +282,25 @@ public class LoxoneCryptoService
      * Thread-safe by construction (fresh Cipher per call). The salt-rotation
      * read-modify-write is serialised separately (see {@link #wrapCommand}).
      */
-    public String encryptCommand( String command )
+    public String encryptCommand(String command)
     {
-        String toEncrypt = wrapCommand( command );
+        String toEncrypt = wrapCommand(command);
         try
         {
-            Cipher cipher  = newAesCipher( Cipher.ENCRYPT_MODE );
-            byte[] enc     = cipher.doFinal( toEncrypt.getBytes( StandardCharsets.UTF_8 ) );
-            String b64     = Base64.getEncoder().encodeToString( enc );
-            String urlSafe = URLEncoder.encode( b64, StandardCharsets.UTF_8 );
+            Cipher cipher  = newAesCipher(Cipher.ENCRYPT_MODE);
+            byte[] enc     = cipher.doFinal(toEncrypt.getBytes(StandardCharsets.UTF_8));
+            String b64     = Base64.getEncoder().encodeToString(enc);
+            String urlSafe = URLEncoder.encode(b64, StandardCharsets.UTF_8);
             return config.miniserver().cmd().encrypt() + urlSafe;
         }
-        catch ( IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException
-                | NoSuchPaddingException | InvalidKeyException
-                | InvalidAlgorithmParameterException e )
+        catch (IllegalBlockSizeException
+               | BadPaddingException
+               | NoSuchAlgorithmException
+               | NoSuchPaddingException
+               | InvalidKeyException
+               | InvalidAlgorithmParameterException e)
         {
-            throw new LoxoneCryptoException( "Failed to encrypt command: " + command, e );
+            throw new LoxoneCryptoException("Failed to encrypt command: " + command, e);
         }
     }
 
@@ -332,16 +343,16 @@ public class LoxoneCryptoService
      * fallback. Making this method the complete inverse lets the
      * publisher stay symmetric and dumb.
      */
-    public String decryptControl( String controlEncrypted )
+    public String decryptControl(String controlEncrypted)
     {
         try
         {
             // Step 1 — strip the jdev/sys/enc/ prefix if present.
             String encryptPrefix = config.miniserver().cmd().encrypt();
             String payload       = controlEncrypted;
-            if ( encryptPrefix != null && payload.startsWith( encryptPrefix ) )
+            if (encryptPrefix != null && payload.startsWith(encryptPrefix))
             {
-                payload = payload.substring( encryptPrefix.length() );
+                payload = payload.substring(encryptPrefix.length());
             }
             // Step 2 — URL-decode iff the form is still URL-encoded.
             //
@@ -356,33 +367,36 @@ public class LoxoneCryptoService
             // URL-encoded form would have %2B / %2F / %3D ; URL-decoded
             // form has none. Cheap, deterministic, no false positives
             // (Base64 alphabet never contains '%').
-            if ( payload.indexOf( '%' ) >= 0 )
+            if (payload.indexOf('%') >= 0)
             {
-                payload = URLDecoder.decode( payload, StandardCharsets.UTF_8 );
+                payload = URLDecoder.decode(payload, StandardCharsets.UTF_8);
             }
 
             // Step 3-6 — Base64 → AES decrypt → strip padding + salt wrap.
-            Cipher cipher  = newAesCipher( Cipher.DECRYPT_MODE );
-            byte[] decoded = Base64.getDecoder().decode( payload );
-            byte[] plain   = cipher.doFinal( decoded );
-            String result  = new String( plain, StandardCharsets.UTF_8 );
+            Cipher cipher  = newAesCipher(Cipher.DECRYPT_MODE);
+            byte[] decoded = Base64.getDecoder().decode(payload);
+            byte[] plain   = cipher.doFinal(decoded);
+            String result  = new String(plain, StandardCharsets.UTF_8);
 
-            result = NULL_PADDING.matcher( result ).replaceAll( "" );
-            result = saltPrefixPattern.matcher( result ).replaceFirst( "" );
-            result = nextSaltPrefixPattern.matcher( result ).replaceFirst( "" );
+            result = NULL_PADDING.matcher(result).replaceAll("");
+            result = saltPrefixPattern.matcher(result).replaceFirst("");
+            result = nextSaltPrefixPattern.matcher(result).replaceFirst("");
             return result;
         }
-        catch ( IllegalBlockSizeException | BadPaddingException | NoSuchAlgorithmException
-                | NoSuchPaddingException | InvalidKeyException
-                | InvalidAlgorithmParameterException
-                | IllegalArgumentException e )
+        catch (IllegalBlockSizeException
+               | BadPaddingException
+               | NoSuchAlgorithmException
+               | NoSuchPaddingException
+               | InvalidKeyException
+               | InvalidAlgorithmParameterException
+               | IllegalArgumentException e)
         {
             // IllegalArgumentException covers both URLDecoder ("invalid %XX
             // escape") and Base64.decode ("invalid Base64 sequence") — both
             // mean "this isn't an encrypted control", same outcome as the
             // crypto failures above. Wrapping uniformly keeps the caller's
             // catch simple.
-            throw new LoxoneCryptoException( "Failed to decrypt response control: " + controlEncrypted, e );
+            throw new LoxoneCryptoException("Failed to decrypt response control: " + controlEncrypted, e);
         }
     }
 
@@ -392,11 +406,11 @@ public class LoxoneCryptoService
 
     private void requirePublicKey()
     {
-        if ( miniserverRsaPublicKey == null )
+        if (miniserverRsaPublicKey == null)
         {
             throw new LoxoneCryptoException(
-                    "Miniserver RSA public key not loaded yet — call loadPublicKey() first " +
-                    "(typically handshake step 2)" );
+                                            "Miniserver RSA public key not loaded yet — call loadPublicKey() first " +
+                                            "(typically handshake step 2)");
         }
     }
 
@@ -406,36 +420,43 @@ public class LoxoneCryptoService
         int    bits    = config.miniserver().crypto().encryptCommand().keySize();
         try
         {
-            int maxAllowed = Cipher.getMaxAllowedKeyLength( aesAlgo );
-            if ( maxAllowed < bits )
+            int maxAllowed = Cipher.getMaxAllowedKeyLength(aesAlgo);
+            if (maxAllowed < bits)
             {
                 throw new LoxoneCryptoException(
-                        "JCE allows max " + maxAllowed + "-bit " + aesAlgo +
-                        " but config requested " + bits + ". Enable unlimited-strength JCE." );
+                                                "JCE allows max " + maxAllowed
+                                                + "-bit "
+                                                + aesAlgo
+                                                +
+                                                " but config requested "
+                                                + bits
+                                                + ". Enable unlimited-strength JCE.");
             }
-            KeyGenerator kg = KeyGenerator.getInstance( aesAlgo );
-            kg.init( bits );
+            KeyGenerator kg = KeyGenerator.getInstance(aesAlgo);
+            kg.init(bits);
             return kg.generateKey();
         }
-        catch ( NoSuchAlgorithmException e )
+        catch (NoSuchAlgorithmException e)
         {
-            throw new LoxoneCryptoException( "AES key generation failed", e );
+            throw new LoxoneCryptoException("AES key generation failed", e);
         }
     }
 
     private IvParameterSpec generateRandomIv()
     {
-        byte[] iv = new byte[ config.miniserver().crypto().sessionKey().initVectorLength() ];
-        secureRandom.nextBytes( iv );
-        return new IvParameterSpec( iv );
+        byte[] iv = new byte[config.miniserver().crypto().sessionKey().initVectorLength()];
+        secureRandom.nextBytes(iv);
+        return new IvParameterSpec(iv);
     }
 
-    private Cipher newAesCipher( int mode )
-            throws NoSuchPaddingException, NoSuchAlgorithmException,
-                           InvalidAlgorithmParameterException, InvalidKeyException
+    private Cipher newAesCipher(int mode)
+                                          throws NoSuchPaddingException,
+                                          NoSuchAlgorithmException,
+                                          InvalidAlgorithmParameterException,
+                                          InvalidKeyException
     {
-        Cipher c = Cipher.getInstance( aesTransformation );
-        c.init( mode, aesKey, ivSpec );
+        Cipher c = Cipher.getInstance(aesTransformation);
+        c.init(mode, aesKey, ivSpec);
         return c;
     }
 
@@ -443,9 +464,9 @@ public class LoxoneCryptoService
      * Salt rotation. {@code synchronized} because read-modify-write of
      * {@link #currentSalt} must not race outbound commands.
      */
-    private synchronized String wrapCommand( String command )
+    private synchronized String wrapCommand(String command)
     {
-        if ( saltExpired() )
+        if (saltExpired())
         {
             String prev = currentSalt;
             currentSalt = generateNewSalt();
@@ -456,10 +477,10 @@ public class LoxoneCryptoService
 
     private String generateNewSalt()
     {
-        byte[] bytes = new byte[ config.miniserver().crypto().encryptCommand().saltLength() ];
-        secureRandom.nextBytes( bytes );
+        byte[] bytes = new byte[config.miniserver().crypto().encryptCommand().saltLength()];
+        secureRandom.nextBytes(bytes);
         currentSaltCreatedAt = Instant.now().getEpochSecond();
-        return URLEncoder.encode( HEX.formatHex( bytes ), StandardCharsets.UTF_8 );
+        return URLEncoder.encode(HEX.formatHex(bytes), StandardCharsets.UTF_8);
     }
 
     private boolean saltExpired()
@@ -469,31 +490,31 @@ public class LoxoneCryptoService
         return ageSec > maxSec;
     }
 
-    private String digest( String input, String algorithm )
+    private String digest(String input, String algorithm)
     {
         try
         {
-            MessageDigest md = MessageDigest.getInstance( algorithm );
-            return HEX.formatHex( md.digest( input.getBytes( StandardCharsets.UTF_8 ) ) );
+            MessageDigest md = MessageDigest.getInstance(algorithm);
+            return HEX.formatHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
         }
-        catch ( NoSuchAlgorithmException e )
+        catch (NoSuchAlgorithmException e)
         {
-            throw new LoxoneCryptoException( "Digest algorithm not available: " + algorithm, e );
+            throw new LoxoneCryptoException("Digest algorithm not available: " + algorithm, e);
         }
     }
 
-    private String hmac( String input, String hexKey, String algorithm )
+    private String hmac(String input, String hexKey, String algorithm)
     {
         try
         {
-            SecretKeySpec keySpec = new SecretKeySpec( HEX.parseHex( hexKey ), algorithm );
-            Mac           mac     = Mac.getInstance( algorithm );
-            mac.init( keySpec );
-            return HEX.formatHex( mac.doFinal( input.getBytes( StandardCharsets.UTF_8 ) ) );
+            SecretKeySpec keySpec = new SecretKeySpec(HEX.parseHex(hexKey), algorithm);
+            Mac           mac     = Mac.getInstance(algorithm);
+            mac.init(keySpec);
+            return HEX.formatHex(mac.doFinal(input.getBytes(StandardCharsets.UTF_8)));
         }
-        catch ( NoSuchAlgorithmException | InvalidKeyException | IllegalArgumentException e )
+        catch (NoSuchAlgorithmException | InvalidKeyException | IllegalArgumentException e)
         {
-            throw new LoxoneCryptoException( "HMAC failed (alg=" + algorithm + ")", e );
+            throw new LoxoneCryptoException("HMAC failed (alg=" + algorithm + ")", e);
         }
     }
 
@@ -503,20 +524,20 @@ public class LoxoneCryptoService
      * {@code "SHA256"} ⇒ {@code "SHA-256"}. Falls back to the configured
      * default for any unknown / missing value.
      */
-    String resolveDigestAlgorithm( String serverHashAlg )
+    String resolveDigestAlgorithm(String serverHashAlg)
     {
-        if ( serverHashAlg == null || serverHashAlg.isBlank() )
+        if (serverHashAlg == null || serverHashAlg.isBlank())
         {
             return defaultDigestAlgorithm;
         }
-        return switch ( serverHashAlg.trim().toUpperCase() )
+        return switch (serverHashAlg.trim().toUpperCase())
         {
             case "SHA1", "SHA-1" -> "SHA-1";
             case "SHA256", "SHA-256" -> "SHA-256";
-            default ->
-            {
-                LOG.warnf( "Miniserver advertised unknown hashAlg='%s'; falling back to %s",
-                           serverHashAlg, defaultDigestAlgorithm );
+            default -> {
+                LOG.warnf("Miniserver advertised unknown hashAlg='%s'; falling back to %s",
+                          serverHashAlg,
+                          defaultDigestAlgorithm);
                 yield defaultDigestAlgorithm;
             }
         };
@@ -527,13 +548,13 @@ public class LoxoneCryptoService
      * {@link Mac} name. Same fallback semantics as
      * {@link #resolveDigestAlgorithm(String)}.
      */
-    String resolveMacAlgorithm( String serverHashAlg )
+    String resolveMacAlgorithm(String serverHashAlg)
     {
-        if ( serverHashAlg == null || serverHashAlg.isBlank() )
+        if (serverHashAlg == null || serverHashAlg.isBlank())
         {
             return defaultMacAlgorithm;
         }
-        return switch ( serverHashAlg.trim().toUpperCase() )
+        return switch (serverHashAlg.trim().toUpperCase())
         {
             case "SHA1", "SHA-1" -> "HmacSHA1";
             case "SHA256", "SHA-256" -> "HmacSHA256";

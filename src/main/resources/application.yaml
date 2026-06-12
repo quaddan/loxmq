@@ -4,9 +4,9 @@
 # Holds the SHAPE of the configuration and the defaults that are safe across
 # environments. Profile-specific overrides live in:
 #
-#   application-dev.yml        — local dev box
-#   application-staging.yml    — staging miniserver / broker
-#   application-prod.yml       — production
+#   application-dev.yaml        — local dev box
+#   application-staging.yaml    — staging miniserver / broker
+#   application-prod.yaml       — production
 #
 # Activate a profile with:
 #   mvn quarkus:dev                                 # implicitly: dev
@@ -292,7 +292,7 @@ quarkus:
       "com.quaddan":
         level: INFO
       # The `loxone.transport.*` DEBUG (per-publish lines "🚂#N/M ⇨ ...")
-      # now lives in application-dev.yml only. Keeping INFO in the base
+      # now lives in application-dev.yaml only. Keeping INFO in the base
       # avoids polluting staging/prod that don't have an explicit override
       # (operators would otherwise see ~5 DEBUG lines/second).
       "com.hivemq":

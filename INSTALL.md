@@ -23,7 +23,8 @@ topics it links out rather than repeats:
 5. [Build and run — native binary](#5-build-and-run--native-binary)
 6. [Verify it is running](#6-verify-it-is-running)
 7. [Deploy to production](#7-deploy-to-production)
-8. [First-run troubleshooting](#8-first-run-troubleshooting)
+8. [Deploy with Docker (published image)](#8-deploy-with-docker-published-image)
+9. [First-run troubleshooting](#9-first-run-troubleshooting)
 
 ---
 
@@ -102,11 +103,11 @@ production the same keys live in `/etc/loxmq/env` (see [§7](#7-deploy-to-produc
 
 ### 3.3 Essential configuration knobs
 
-Defaults live in `src/main/resources/application.yml`. Any knob is
+Defaults live in `src/main/resources/application.yaml`. Any knob is
 overridable by an environment variable (Quarkus/SmallRye `UPPER_SNAKE_CASE`)
 or by `-Dkey=value` on the command line.
 
-| Knob (`application.yml`)               | Default                  | Override                     | Meaning                                                            |
+| Knob (`application.yaml`)               | Default                  | Override                     | Meaning                                                            |
 |----------------------------------------|--------------------------|------------------------------|--------------------------------------------------------------------|
 | `loxone.miniserver.connection.host`    | `miniserver.example.com` | `MINISERVER_HOST`            | Miniserver hostname / IP                                           |
 | `loxone.miniserver.connection.port`    | `443`                    | `MINISERVER_PORT`            | Miniserver TCP port                                               |
@@ -261,7 +262,7 @@ sudo install -d -o root  -g loxmq -m 0750 /opt/loxmq/certs /etc/loxmq
 ### 7.3 TLS certificates
 
 Copy your full chain and private key into `/opt/loxmq/certs/` under the
-exact names `application-prod.yml` expects:
+exact names `application-prod.yaml` expects:
 
 ```bash
 sudo install -o root -g loxmq -m 0640 fullchain.pem /opt/loxmq/certs/fullchain.pem
@@ -345,7 +346,75 @@ broker is connected (~1 s on native). If it stays `DOWN`, jump to
 
 ---
 
-## 8. First-run troubleshooting
+## 8. Deploy with Docker (published image)
+
+§7 deploys the binary under `systemd` — the maintained production posture.
+**This section is the alternative for users who just want to run loxmq with
+Docker, with no Java/Maven/GraalVM toolchain.** Pre-built images are pulled
+from Docker Hub; you only configure `.env`, drop your TLS cert in `./certs`,
+and read the logs.
+
+> Full reference — image tags, day-2 operations, advanced config override —
+> in **[docker/README.md](./docker/README.md)**. This is the condensed path.
+
+### 8.1 Choose an image
+
+Images live on Docker Hub at
+**[`quaddan/loxmq`](https://hub.docker.com/r/quaddan/loxmq)**:
+
+| Tag        | Contents                       | Architectures          | Use when                                       |
+|------------|--------------------------------|------------------------|------------------------------------------------|
+| `:native`  | GraalVM native binary (~175 MB)| `linux/amd64` only     | x86-64 server / NAS — smallest, instant start  |
+| `:jvm`     | Temurin 25 fast-jar (~360 MB)  | `linux/amd64`, `arm64` | ARM hosts (Raspberry Pi, ARM NAS, Apple silicon)|
+| `:latest`  | same as `:jvm` (multi-arch)    | `linux/amd64`, `arm64` | "runs anywhere"                                |
+
+> **On ARM, use `:jvm`** (set `LOXMQ_TAG=jvm` in `.env`). The amd64-only
+> `:native` image will not start on ARM.
+
+### 8.2 Configure, certs, run
+
+```bash
+# 1. CONFIGURE — same .env as §3 (hosts, Base64 creds, your own app id).
+cp .env.example .env
+$EDITOR .env                              # set LOXONE_MINISERVER_APP_ID (uuidgen), hosts, creds
+
+# 2. CERTS — prod serves HTTPS, so provide your cert + key (see §7.3).
+mkdir -p certs logs cache config
+cp /path/to/fullchain.pem /path/to/privkey.pem certs/
+# The container runs as uid/gid 185 — the PEM files must be readable by it:
+chmod 0644 certs/fullchain.pem && chmod 0640 certs/privkey.pem
+sudo chown 0:185 certs/privkey.pem
+sudo chown -R 185:185 logs cache
+
+# 3. PULL + RUN
+docker compose -f docker-compose.published.yml pull
+docker compose -f docker-compose.published.yml up -d
+```
+
+The mounts: `./certs` (read-only, hot-reloaded on renewal), `./logs`,
+`./cache`, and an optional `./config/application.yaml` to override any
+**runtime** key (build-time keys stay baked — see
+[docker/README.md](./docker/README.md)).
+
+### 8.3 Verify and read logs
+
+```bash
+# Health over HTTPS (-k only because of any self-signed chain):
+curl -sk https://localhost:8443/q/health/ready
+
+# Live console:
+docker compose -f docker-compose.published.yml logs -f
+# …or the rotated files on the host: logs/application.log, error.log, warn.log,
+#    commands.log, audit.log — or the built-in /logs dashboard page.
+```
+
+`health/ready` flips to **UP** once the Miniserver session reaches `RUNNING`
+and the broker is connected. If it stays `DOWN`, see §9 and
+**[RUNBOOK.md](./RUNBOOK.md)**.
+
+---
+
+## 9. First-run troubleshooting
 
 | Symptom                                                  | First thing to check                                                                          |
 |----------------------------------------------------------|-----------------------------------------------------------------------------------------------|

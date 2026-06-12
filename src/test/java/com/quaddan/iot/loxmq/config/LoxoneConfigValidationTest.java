@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * specific property (so the operator can locate the typo).
  *
  * <p>Why not {@code @QuarkusTest}: each test would need a separate Quarkus
- * boot (~2 s each) and a way to inject a tailored {@code application.yml}
+ * boot (~2 s each) and a way to inject a tailored {@code application.yaml}
  * per test. Using SmallRye Config directly runs at ~10 ms per test and
  * exercises exactly the same validation code path Quarkus uses at startup.
  */

@@ -69,9 +69,9 @@ import java.util.Base64;
  * <h3>Safety guards</h3>
  * Like {@link UserMutationService}, we refuse to touch the
  * binding user — changing its password without syncing
- * {@code application.yml} disconnects it at the next
+ * {@code application.yaml} disconnects it at the next
  * session-renewal. The operator must do it in two steps:
- * edit the {@code application.yml}, restart, then use the UI / API
+ * edit the {@code application.yaml}, restart, then use the UI / API
  * to align the Miniserver. Not a workflow to automate here.
  *
  * <p>Spec: {@code docs/loxone/1700_Usermanagement.pdf} V17
@@ -261,7 +261,7 @@ public class UserAuthService
             String msg = "Refusing to change " + opLabel + " of user " + target.name()
                          + " — this is the binding's own login. Update "
                          + "loxone.miniserver.security.credentials.password in "
-                         + "application.yml first, then restart the binding.";
+                         + "application.yaml first, then restart the binding.";
             AUDIT.warnf( "%s REFUSE %s %s — self", auditTs(), opLabel.toUpperCase(), target.name() );
             throw new IllegalArgumentException( msg );
         }
@@ -271,8 +271,7 @@ public class UserAuthService
     {
         if ( userName == null || userName.isBlank() )
         { return false; }
-        String bindingName = decodeBase64(
-                config.miniserver().security().credentials().user() );
+        String bindingName = decodeBase64(config.miniserver().security().credentials().user() );
         return userName.equals( bindingName );
     }
 

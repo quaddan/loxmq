@@ -45,7 +45,7 @@ import static org.hamcrest.Matchers.notNullValue;
  * The 409 + bootstrap-fail paths are pure server-side validation that
  * doesn't require a packaged JAR subprocess. @QuarkusTest boots the app
  * in-process which is ~10× faster. The default test profile
- * (src/test/resources/application.yml) sets auto-start=false so the boot
+ * (src/test/resources/application.yaml) sets auto-start=false so the boot
  * leaves session=DISCONNECTED and token=empty — both 409 conditions
  * naturally fire without explicit setup.
  */

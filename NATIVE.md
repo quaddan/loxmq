@@ -327,11 +327,11 @@ Maven dependencies, or reflection:
 # ↓ must succeed (~3 min warm cache)
 
 # 3. Launch the binary, check it reaches RUNNING
-./target/loxmq-1.0.0-runner &
+./target/loxmq-*-runner &
 sleep 8
 curl -sS -o /dev/null -w "GET / → HTTP %{http_code}\n" http://localhost:8080/
 curl -sS http://localhost:8080/api/v1/state | jq '.session.state, .broker.connected'
-pkill -f loxmq-1.0.0-runner
+pkill -f 'loxmq-.*-runner'
 
 # 4. If steps 2-3 OK → commit + push + tag
 ```
@@ -349,7 +349,7 @@ rebuild native.**
 | `pom.xml` § profile `native`                                       | Enables `quarkus.native.enabled=true`                        |
 | `pom.xml` § dep `quarkus-hivemq-client:2.5.0`                      | Quarkiverse extension that ships HiveMQ/Netty native hints   |
 | `pom.xml` § dep `org.graalvm.nativeimage:svm:25.0.3` (provided)    | `@TargetClass`, `@Alias`, `@RecomputeFieldValue` annotations |
-| `src/main/resources/application.yml` § `quarkus.arc.exclude-types` | CDI beans to skip (HiveMQMqttConnector)                      |
+| `src/main/resources/application.yaml` § `quarkus.arc.exclude-types` | CDI beans to skip (HiveMQMqttConnector)                      |
 | `src/main/java/.../util/NativeReflectionConfig.java`               | Central list of classes registered for reflection            |
 | `src/main/java/.../util/graal/Target_JCTools.java`                 | GraalVM substitutions for JCTools standalone                 |
 

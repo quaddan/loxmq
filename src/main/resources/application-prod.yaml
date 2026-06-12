@@ -19,7 +19,7 @@ quarkus:
 
   log:
     # INFO. Console = LoxmqConsoleFormatter, file = plain-text
-    # in logs/application.log (see base application.yml).
+    # in logs/application.log (see base application.yaml).
     level: INFO
 
   swagger-ui:
@@ -63,7 +63,7 @@ quarkus:
 loxone:
   miniserver:
     # production identity. The app.id below is a placeholder — REPLACE it with
-    # your own per-instance UUID (full explanation in application.yml). NOTE
+    # your own per-instance UUID (full explanation in application.yaml). NOTE
     # that on a LIVE instance the app.id IS the retained-MQTT namespace, so
     # changing it later renames every retained topic at once: only do that
     # during a planned cutover (downstream consumers must follow the new root).
@@ -87,8 +87,15 @@ loxone:
       # then set this knob back to false.
       tls-skip-hostname-verification: true
     app:
-      id: d021b283-4f50-4822-91c6-91a9a1c83dd2
-      info: loxmq PRODUCTION
+      # Per-instance hyphenated UUID (8-4-4-4-12). Overridable per-deployment so
+      # third-party users set their OWN id WITHOUT editing this baked YAML, via
+      # env LOXONE_MINISERVER_APP_ID (see .env.example). The literal below is the
+      # reference instance's id and acts as the fallback default only.
+      # NOTE: on a LIVE instance the app.id IS the retained-MQTT namespace, so
+      # changing it later renames every retained topic at once — only during a
+      # planned cutover (downstream consumers must follow the new root).
+      id: ${LOXONE_MINISERVER_APP_ID:d021b283-4f50-4822-91c6-91a9a1c83dd2}
+      info: ${LOXONE_MINISERVER_APP_INFO:loxmq PRODUCTION}
 
   transport:
     # broker via the wildcard cert (same setup as staging).

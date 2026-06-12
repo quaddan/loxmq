@@ -72,7 +72,7 @@ public final class MosquittoRestartableTestResource implements QuarkusTestResour
 
     /**
      * Auth is <b>required</b>. The matching credentials come from the
-     * dev profile ({@code application-dev.yml}) which is what
+     * dev profile ({@code application-dev.yaml}) which is what
      * the IT runs under (cf. {@code quarkus.test.integration-test-profile=dev}
      * in {@code pom.xml}).
      * <p>

@@ -138,7 +138,7 @@ one with:
 uuidgen        # or: python -c 'import uuid; print(uuid.uuid4())'
 ```
 
-The base `application.yml` ships the sentinel `00000000-0000-0000-0000-000000000000`
+The base `application.yaml` ships the sentinel `00000000-0000-0000-0000-000000000000`
 (an obvious "not configured yet" marker); the `dev`/`staging`/`prod`
 profiles ship distinct random placeholders. Set your own per profile, or
 override at deploy time with the `LOXONE_MINISERVER_APP_ID` environment

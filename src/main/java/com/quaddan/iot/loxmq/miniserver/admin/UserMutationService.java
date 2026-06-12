@@ -74,7 +74,7 @@ import java.util.Base64;
 public class UserMutationService
 {
     /** Operator audit trail. Routed to {@code audit.log} via the
-     *  {@code "audit"} category configured in {@code application.yml}.
+     *  {@code "audit"} category configured in {@code application.yaml}.
      *  Format: INFO + structured message {@code <timestamp> <op> <target> [<details>]}. */
     private static final Logger AUDIT = Logger.getLogger( "audit" );
 

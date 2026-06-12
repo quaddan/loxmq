@@ -29,7 +29,7 @@ quarkus:
   # cert paths.
   #
   # Option B layout: certs side-car of the app under /opt/loxmq/certs/.
-  # See application-prod.yml for the detailed rationale (centralized
+  # See application-prod.yaml for the detailed rationale (centralized
   # certbot LXC pushing via rsync, Quarkus TLS Registry auto-reload every
   # `reload-period`).
   #
@@ -69,7 +69,7 @@ loxone:
       tls-skip-hostname-verification: true
     app:
       # Placeholder per-instance UUID — REPLACE with your own (see the full
-      # app.id explanation in application.yml). It is the MQTT topic root,
+      # app.id explanation in application.yaml). It is the MQTT topic root,
       # MQTT client-id, JWT client-UUID and on-disk cache dir for this profile.
       id: de6e88bb-18fd-455e-815b-ba6585418018
       info: loxmq STAGING

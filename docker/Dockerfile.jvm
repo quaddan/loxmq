@@ -1,0 +1,64 @@
+# ============================================================================
+# JVM container image — Java 25 LTS runtime, fast-jar packaging.
+#
+# Build:
+#   mvn package -DskipTests
+#   docker build -f docker/Dockerfile.jvm -t quaddan/loxmq:jvm .
+#
+# Run (with the Let's Encrypt cert mounted in):
+#   docker run -d --restart=always \
+#     -p 8443:8443 \
+#     -v /opt/loxmq/certs:/opt/loxmq/certs:ro \
+#     -v /var/lib/loxmq/cache:/work/cache \
+#     -e QUARKUS_PROFILE=prod \
+#     -e LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD='...' \
+#     --name loxmq \
+#     quaddan/loxmq:jvm
+#
+# Base image: Eclipse Temurin JRE 25 LTS on Ubuntu Jammy. Red Hat UBI only
+# ships OpenJDK 17 / 21 LTS; we use Temurin for the 25 LTS line. Java 25 is
+# the latest version Mandrel/GraalVM currently supports — Java 26 bytecode
+# (class file v70) is not yet handled by native-image. ~360 MB final.
+# ============================================================================
+
+FROM eclipse-temurin:25-jre-jammy
+
+ENV LANG='en_US.UTF-8' LANGUAGE='en_US:en'
+
+# Non-root user for the Quarkus process. UID/GID 185 is the standard
+# Quarkus container convention, so volume mounts (cache/, jfr/) inherit a
+# stable ownership.
+RUN groupadd --system --gid 185 quarkus \
+ && useradd  --system --uid 185 --gid 185 --home /work --shell /sbin/nologin quarkus \
+ && mkdir -p /work/cache /work/jfr \
+ && chown -R 185:185 /work
+
+WORKDIR /work
+USER 185
+
+# Quarkus's "fast-jar" layout. Order matters for Docker layer caching:
+# rarely-changing dependency layers first, application classes last.
+COPY --chown=185:0 target/quarkus-app/lib/      /work/lib/
+COPY --chown=185:0 target/quarkus-app/*.jar     /work/
+COPY --chown=185:0 target/quarkus-app/app/      /work/app/
+COPY --chown=185:0 target/quarkus-app/quarkus/  /work/quarkus/
+
+# JVM tuning (heap small, G1 periodic GC, capped metaspace/code-cache,
+# JFR always-on with rolling 2 h / 200 MB window).
+ENV JAVA_TOOL_OPTIONS=" \
+    -Xms64m \
+    -Xmx128m \
+    -XX:+UseG1GC \
+    -XX:G1PeriodicGCInterval=120000 \
+    -XX:+G1PeriodicGCInvokesConcurrent \
+    -XX:MaxMetaspaceSize=96m \
+    -XX:ReservedCodeCacheSize=64m \
+    -XX:MaxDirectMemorySize=32m \
+    -Xss512k \
+    -XX:+ExitOnOutOfMemoryError \
+    -XX:StartFlightRecording=disk=true,maxsize=200M,maxage=2h,name=production,settings=default \
+    -XX:FlightRecorderOptions=repository=/work/jfr,stackdepth=64 \
+    -Djava.util.logging.manager=org.jboss.logmanager.LogManager"
+
+EXPOSE 8080 8443
+ENTRYPOINT [ "java", "-jar", "/work/quarkus-run.jar" ]

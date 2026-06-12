@@ -2,7 +2,7 @@
 # DEV profile — local development on the operator's workstation.
 #
 # Activated implicitly by `mvn quarkus:dev` and explicitly by
-# `-Dquarkus.profile=dev`. Loaded ON TOP of application.yml; only the
+# `-Dquarkus.profile=dev`. Loaded ON TOP of application.yaml; only the
 # keys below override.
 #
 # Properties grouped by prefix: quarkus.* → loxone.*
@@ -60,7 +60,7 @@ loxone:
       secure: false
     app:
       # Placeholder per-instance UUID — REPLACE with your own (see the full
-      # app.id explanation in application.yml). It is the MQTT topic root,
+      # app.id explanation in application.yaml). It is the MQTT topic root,
       # MQTT client-id, JWT client-UUID and on-disk cache dir for this profile.
       id: 7b66ce4a-c00a-453c-8da3-314e971db14d
       info: loxmq DEV

@@ -93,7 +93,7 @@ public class CommandSubscriber
     /**
      * Dedicated audit logger for inbound commands — routed to the file
      * {@code logs/commands-<timestamp>-<env>.log} via the handler named
-     * {@code commands} configured in {@code application.yml}
+     * {@code commands} configured in {@code application.yaml}
      * ({@code quarkus.log.handler.file.commands.*}). The routing uses
      * {@code use-parent-handlers=false}, so these lines <strong>do not
      * appear</strong> in the console or the main log — only in the

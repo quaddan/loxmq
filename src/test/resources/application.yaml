@@ -2,7 +2,7 @@
 # TEST profile — values loaded for @QuarkusTest runs.
 #
 # Quarkus selects %test (NOT %dev) when running under @QuarkusTest. This file
-# overlays the base application.yml with values that let @ConfigMapping
+# overlays the base application.yaml with values that let @ConfigMapping
 # validation pass without requiring an operator-supplied environment variable.
 #
 # Nothing here is sensitive — all values are placeholders (Base64-encoded
@@ -29,7 +29,7 @@ quarkus:
     # keep the custom LoxmqConsoleFormatter (LoggingProducers swaps it in
     # at startup); redirect the file handler into target/ so `mvn clean`
     # wipes test logs. `enabled=true` is MANDATORY (default false in
-    # Quarkus 3.27+) — see application.yml for the details.
+    # Quarkus 3.27+) — see application.yaml for the details.
     file:
       enabled: true
       path: target/test.log

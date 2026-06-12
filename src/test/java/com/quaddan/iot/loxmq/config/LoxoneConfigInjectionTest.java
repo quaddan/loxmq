@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ul>
  *   <li>A new sub-interface added without a matching property — surfaces as
  *       a {@code ConfigValidationException} at startup.</li>
- *   <li>A property renamed in {@code application.yml} but not in the
+ *   <li>A property renamed in {@code application.yaml} but not in the
  *       interface (or vice-versa) — the injected value becomes
  *       {@code null}/default and the assertions below trip.</li>
  *   <li>A {@code @WithDefault} that doesn't parse (e.g. an invalid

@@ -1,0 +1,75 @@
+# ============================================================================
+# loxmq — Docker Compose for END USERS (pulls a PUBLISHED image).
+#
+# Nothing is built locally: the image is pulled from Docker Hub
+# (https://hub.docker.com/r/quaddan/loxmq). This is the supported path for
+# third-party users. (The maintainer's build-from-source path lives in
+# docker-compose.yml + docker-compose.dev.yml.)
+#
+# ─ Quick start ──────────────────────────────────────────────────────────────
+#   cp .env.example .env                  # then edit .env (hosts, creds, app id)
+#   mkdir -p certs logs cache config      # certs go in ./certs
+#   cp fullchain.pem privkey.pem certs/   # YOUR TLS cert + key (prod = HTTPS)
+#   sudo chown -R 185:185 logs cache      # container runs as uid/gid 185
+#   docker compose -f docker-compose.published.yml pull
+#   docker compose -f docker-compose.published.yml up -d
+#
+# ─ Which image (LOXMQ_TAG in .env) ──────────────────────────────────────────
+#   native (default) — smallest, instant start. x86-64 (amd64) ONLY.
+#   jvm              — multi-arch incl. ARM (Raspberry Pi, ARM NAS, Apple
+#                      silicon). Larger image, slightly slower start. Set
+#                      LOXMQ_TAG=jvm on ARM hosts — a native amd64 image will
+#                      NOT run there.
+#
+# ─ The three things a user touches ──────────────────────────────────────────
+#   1. CONFIGURE — .env (secrets + hosts + app id). Advanced: drop a full
+#                  application.yaml into ./config to override any RUNTIME key.
+#                  Plain-TCP broker (LAN Mosquitto on 1883)? Add to .env:
+#                  LOXONE_TRANSPORT_CONNECTION_PROTOCOL=tcp and
+#                  LOXONE_TRANSPORT_CONNECTION_SECURE=false (see docker/README.md).
+#   2. CERTS     — put fullchain.pem + privkey.pem in ./certs (mounted :ro,
+#                  hot-reloaded within PT1H on renewal — no restart needed).
+#   3. LOGS      — `docker compose -f docker-compose.published.yml logs -f`
+#                  for the live console, OR read the rotated files in ./logs
+#                  (application.log / error.log / warn.log / commands.log /
+#                  audit.log), OR the built-in /logs dashboard page.
+# ============================================================================
+
+services:
+  loxmq:
+    image: quaddan/loxmq:${LOXMQ_TAG:-native}
+    container_name: loxmq
+    restart: unless-stopped
+
+    # Secrets + per-deployment values: MINISERVER_HOST, MQTT_BROKER_HOST,
+    # LOXONE_MINISERVER_APP_ID, LOXONE_*_CREDENTIALS_*, … See .env.example.
+    env_file:
+      - .env
+
+    environment:
+      # prod = HTTP→HTTPS redirect + Swagger off. Use "staging" to expose Swagger.
+      QUARKUS_PROFILE: ${QUARKUS_PROFILE:-prod}
+      # Pin the in-container paths so BOTH the :native (Debian) and :jvm images
+      # behave identically regardless of their own image defaults — the mounts
+      # below target exactly these paths.
+      LOXONE_CERT_DIR: /opt/loxmq/certs
+      LOG_DIR: /var/lib/loxmq/logs
+      CACHE_DIR: /var/lib/loxmq/cache
+
+    ports:
+      - "8080:8080"   # plain HTTP (prod redirects → 8443)
+      - "8443:8443"   # HTTPS / dashboard
+
+    volumes:
+      # YOUR TLS cert + key (fullchain.pem / privkey.pem). Read-only; swapped on
+      # the host at renewal and auto-reloaded by Quarkus' TLS Registry.
+      - ${LOXMQ_CERTS_DIR:-./certs}:/opt/loxmq/certs:ro
+      # Rotated log files (size-rotated 20 MB × 30).
+      - ${LOXMQ_LOGS_DIR:-./logs}:/var/lib/loxmq/logs
+      # On-disk LoxAPP3 Structure-File cache (cache/<app.id>/).
+      - ${LOXMQ_CACHE_DIR:-./cache}:/var/lib/loxmq/cache
+      # OPTIONAL runtime config override: an application.yaml here overrides any
+      # RUNTIME key (hosts, log levels, intervals…). Build-time keys (TLS wiring,
+      # profile) are baked into the image and cannot be changed this way. Leave
+      # the dir empty to rely on .env alone.
+      - ${LOXMQ_CONFIG_DIR:-./config}:/work/config:ro

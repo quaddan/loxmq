@@ -1,3 +1,5 @@
+<img src="src/main/resources/META-INF/resources/images/loxmq-logo.svg" alt="loxmq">
+
 # Admin surface — Users · Schedules · Logs
 
 Beyond the **passive** bridge (outbound state events + inbound command I/O),
@@ -53,7 +55,7 @@ republishes everything on MQTT — both observers coexist.
 ### Dedicated audit log
 
 User mutations are written to a separate `audit.log` (category `"audit"`,
-routed out of the main log by a dedicated handler in `application.yml`,
+routed out of the main log by a dedicated handler in `application.yaml`,
 30-day rotation). The format is ISO-8601 + `DISABLE` / `REFUSE` / `ASSIGN` /
 `REMOVE`, so an operator can produce a one-off report with `grep`.
 

@@ -84,7 +84,7 @@ class StateEventsRoundTripIT
 {
     /** Same dev-profile-resolved app-id as the other ITs. The binding's
      *  state-event topic template is {@code root}/{@code appId}/states/type_2 —
-     *  see application.yml (loxone.transport.topics). */
+     *  see application.yaml (loxone.transport.topics). */
     private static final String APP_ID      = "7b66ce4a-c00a-453c-8da3-314e971db14d";
     private static final String STATE_TOPIC =
             "iot/loxmq/" + APP_ID + "/states/type_2/"

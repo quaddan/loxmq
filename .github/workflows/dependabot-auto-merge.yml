@@ -1,0 +1,34 @@
+name: Dependabot auto-merge
+
+# Auto-merges low-risk Dependabot PRs ONCE CI is green: patch/minor Maven bumps
+# and any GitHub Actions bump. MAJOR bumps are left for manual review.
+#
+# Prerequisites (otherwise this workflow is inert / unsafe):
+#   1. Settings > General > Pull Requests > enable "Allow auto-merge".
+#   2. Settings > Branches: protect `main` and require the status check
+#      "Build + unit + integration tests" (the CI job). This makes --auto wait
+#      for green CI before merging; without it, --auto can merge before CI ends.
+#
+# Delete this file if you'd rather review every dependency PR by hand.
+
+on: pull_request_target
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: ${{ github.actor == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+
+      - name: Enable auto-merge (patch/minor, or any GitHub Action)
+        if: ${{ steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor' || steps.meta.outputs.package-ecosystem == 'github_actions' }}
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
