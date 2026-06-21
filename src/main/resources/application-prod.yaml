@@ -29,7 +29,7 @@ quarkus:
     # property: a rebuild + redeploy is required for any change to apply.
     always-include: true
   # Note: the `quarkus.dev-ui.always-include = false` property that used to sit
-  # here no longer exists in Quarkus 3.36.1 (the dev-UI is now strictly
+  # here no longer exists in Quarkus 3.36.3 (the dev-UI is now strictly
   # dev-mode, never exposed in a runtime jar). Quarkus warns "Unrecognized
   # configuration key" if it stays. No security loss: `/q/dev-ui` is not
   # reachable in packaged prod mode anyway.

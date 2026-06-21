@@ -24,8 +24,8 @@
 # ─ The three things a user touches ──────────────────────────────────────────
 #   1. CONFIGURE — .env (secrets + hosts + app id). Advanced: drop a full
 #                  application.yaml into ./config to override any RUNTIME key.
-#                  Plain-TCP broker (LAN Mosquitto on 1883)? Add to .env:
-#                  LOXONE_TRANSPORT_CONNECTION_PROTOCOL=tcp and
+#                  Plain broker (LAN Mosquitto over WS on 8083)? Add to .env:
+#                  LOXONE_TRANSPORT_CONNECTION_PROTOCOL=ws and
 #                  LOXONE_TRANSPORT_CONNECTION_SECURE=false (see docker/README.md).
 #   2. CERTS     — put fullchain.pem + privkey.pem in ./certs (mounted :ro,
 #                  hot-reloaded within PT1H on renewal — no restart needed).

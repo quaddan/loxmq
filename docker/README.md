@@ -21,7 +21,7 @@ Images live on Docker Hub at
 | `:native`              | GraalVM native binary (~175 MB)   | `linux/amd64` only       | x86-64 server / NAS — smallest, instant start       |
 | `:jvm`                 | Temurin 25 fast-jar (~360 MB)     | `linux/amd64`, `arm64`   | ARM hosts (Raspberry Pi, ARM NAS, Apple silicon)    |
 | `:latest`              | same as `:jvm` (multi-arch)       | `linux/amd64`, `arm64`   | "just give me something that runs anywhere"         |
-| `:1.0.1-jvm` / `-native` | a specific release              | as above                 | pinning a version                                   |
+| `:1.0.2-jvm` / `-native` | a specific release              | as above                 | pinning a version                                   |
 
 > Multi-arch (`arm64`) manifests are produced by the release workflow
 > (`.github/workflows/release.yml`); an image pushed manually from a
@@ -88,14 +88,15 @@ Two layers, combine as you like:
    > redirect/Swagger toggles) are compiled into the image and **cannot** be
    > changed via this file — they require a different image/profile.
 
-> **Plain-TCP broker (no TLS)?** The baked `prod` profile expects a TLS
-> WebSocket broker (`wss://…:8084/mqtt`). For a plain LAN Mosquitto on
-> `1883`, override the transport at runtime — add to `.env`:
+> **Plain broker (no TLS)?** The baked `prod` profile expects a TLS
+> WebSocket broker (`wss://…:8084/mqtt`). For a plain LAN Mosquitto over
+> WebSocket on `8083`, drop TLS but keep the WebSocket transport (the baked
+> `/mqtt` path still applies) — add to `.env`:
 >
 > ```properties
-> LOXONE_TRANSPORT_CONNECTION_PROTOCOL=tcp
+> LOXONE_TRANSPORT_CONNECTION_PROTOCOL=ws
 > LOXONE_TRANSPORT_CONNECTION_SECURE=false
-> MQTT_BROKER_PORT=1883
+> MQTT_BROKER_PORT=8083
 > ```
 >
 > Accepted protocols: `tcp` `ssl` `tls` `mqtts` `ws` `wss`. Both keys are

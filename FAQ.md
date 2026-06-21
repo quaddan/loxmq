@@ -519,7 +519,7 @@ Will disappear as soon as a re-indexed 2.6.0+ version is released on Maven Centr
 ### `Unrecognized configuration key "quarkus.dev-ui.always-include"`
 
 Not in progress. The property was removed — no longer exists
-in Quarkus 3.36.1. If you see it, it's an out-of-date
+in Quarkus 3.36.3. If you see it, it's an out-of-date
 config file.
 
 ### The browser says "Not secure" despite a valid Let's Encrypt cert

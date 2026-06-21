@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning 2.0](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-06-21
+
+### Capabilities
+
+- **Version tags now also publish a GitHub Release** with downloadable
+  assets — fast-jar zip, native Linux x86-64 binary, `env.example`, the two
+  systemd units and `SHA256SUMS.txt` — assembled by the same workflow that
+  pushes the Docker images. Release notes are extracted from the matching
+  CHANGELOG section, so write the entry before pushing the tag. (The v1.0.1
+  release was assembled by hand with the same layout.)
+
+### Changed
+
+- **Quarkus 3.36.2 → 3.36.3** (patch bump). Stack version references synced
+  across `README.md` (badge + stack table), `ARCHITECTURE.md`, `FAQ.md` and
+  the `pom.xml` comments.
+- **Testcontainers is no longer pinned in `pom.xml`.** The Quarkus 3.36.x
+  BOM now manages it (resolves to 2.0.5), so the explicit
+  `<testcontainers.version>` property and the dependency `<version>` were
+  removed — a single BOM bump now carries the test-only dependency.
+- Build plugin `spotless-maven-plugin` 3.6.0 → 3.7.0.
+- Docker docs: the plain-broker (no-TLS) example now uses `ws` on `8083`
+  (WebSocket without TLS — the baked `wss` default minus encryption, keeping
+  the `/mqtt` path) instead of raw `tcp` on `1883`, consistently across
+  `docker/README.md`, `docker-compose.published.yml` and `docker/DOCKERHUB.md`.
+
 ## [1.0.1] - 2026-06-12
 
 ### Capabilities
@@ -68,5 +94,6 @@ and this project adheres to [Semantic Versioning 2.0](https://semver.org/spec/v2
 - `README.md` — Docker Pulls badge; the Docker section points at Docker
   Hub. `INSTALL.md` §8 — same registry switch and measured sizes.
 
-[Unreleased]: https://github.com/quaddan/loxmq/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/quaddan/loxmq/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/quaddan/loxmq/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/quaddan/loxmq/compare/v1.0.0...v1.0.1

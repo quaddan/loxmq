@@ -4,7 +4,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/quaddan/loxmq)](https://hub.docker.com/r/quaddan/loxmq)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/java-25%20LTS-orange.svg)](https://openjdk.org/projects/jdk/25/)
-[![Quarkus](https://img.shields.io/badge/quarkus-3.36.1-4695EB.svg)](https://quarkus.io)
+[![Quarkus](https://img.shields.io/badge/quarkus-3.36.3-4695EB.svg)](https://quarkus.io)
 [![MQTT](https://img.shields.io/badge/MQTT-v5-660066.svg)](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
 
 > **Production-grade bridge between a Loxone Miniserver and an MQTT v5 broker.**
@@ -275,8 +275,8 @@ handled.
 
 | Aspect               | Value                                                                                                                                                                                                                  |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Version              | **1.0.1** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
-| Stack                | Java 25 LTS · Quarkus 3.36.1 · `quarkus-hivemq-client` 2.5.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
+| Version              | **1.0.2** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
+| Stack                | Java 25 LTS · Quarkus 3.36.3 · `quarkus-hivemq-client` 2.5.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
 | MicroProfile         | Health · Metrics (Micrometer) · OpenAPI · Fault Tolerance · Config                                                                                                                                                     |
 | TLS                  | Wildcard `*.<domain>` Let's Encrypt on the binding's HTTP server side. On the Miniserver side: automatic resolution based on `httpsStatus` returned by `jdev/cfg/apiKey` (transparent plain/secure switch).            |
 | Packaging            | **JVM fast-jar** (~2 s startup) + **native binary** (~88 MB, ~50 ms startup, 50-80 MB RSS, standalone) + **two mutually exclusive systemd units** `loxmq-jvm.service` / `loxmq-native.service` (recommended for prod). |

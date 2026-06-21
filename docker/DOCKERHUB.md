@@ -61,13 +61,13 @@ every variable is documented there). The core set:
 | `LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER` / `…_PASSWORD` | broker account (Base64) |
 | `LOXONE_MINISERVER_APP_ID` | a UUID **you** generate (`uuidgen`) |
 
-**Plain-TCP broker (LAN Mosquitto on 1883)?** The default targets a TLS
+**Plain broker (LAN Mosquitto over WS on 8083)?** The default targets a TLS
 WebSocket broker (`wss`). Add to `.env`:
 
 ```properties
-LOXONE_TRANSPORT_CONNECTION_PROTOCOL=tcp
+LOXONE_TRANSPORT_CONNECTION_PROTOCOL=ws
 LOXONE_TRANSPORT_CONNECTION_SECURE=false
-MQTT_BROKER_PORT=1883
+MQTT_BROKER_PORT=8083
 ```
 
 ## Volumes and ports
