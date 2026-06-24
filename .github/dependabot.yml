@@ -4,13 +4,13 @@ updates:
   - package-ecosystem: maven
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
     open-pull-requests-limit: 10
     labels:
       - dependencies
       - maven
     groups:
-      # Minor + patch bumps arrive as ONE PR (checked daily); majors stay separate so you can
+      # Minor + patch bumps arrive as ONE PR (checked weekly); majors stay separate so you can
       # review them individually (e.g. a Quarkus platform major — trigger the
       # SECURITY.md re-scan when that lands).
       maven-minor-patch:
@@ -22,7 +22,7 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: daily
+      interval: weekly
     open-pull-requests-limit: 5
     labels:
       - dependencies
