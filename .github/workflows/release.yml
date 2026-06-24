@@ -226,6 +226,10 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           path: dist
+          # Only our two release artifacts — NOT the *.dockerbuild provenance
+          # artifacts that docker/build-push-action uploads automatically
+          # (downloading those broke this step and would land as junk assets).
+          pattern: "{jvm-zip,native-binary}"
           merge-multiple: true
 
       - name: Assemble assets (env template, systemd units, checksums)
