@@ -17,7 +17,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -104,26 +103,48 @@ public class TokenRefreshScheduler
      */
     public Duration scheduleNext( Runnable refresh )
     {
-        cancel();
         var       refreshCfg = config.miniserver().security().token().refresh();
         Duration  period     = refreshCfg.period();
         LocalTime delayTime  = refreshCfg.delayTime();
 
-        // Anchor the refresh to delay-time on the day where now+period falls,
-        // rather than firing at an arbitrary instant `period` after the last one.
         LocalDateTime now       = LocalDateTime.now();
+        LocalDateTime scheduled = computeNextFire( now, period, delayTime );
+        Duration      delay     = Duration.between( now, scheduled );
+
+        LOG.infof( "Token refresh scheduled for %s (in %s) — period=%s, delay-time=%s",
+                   scheduled, delay, period, delayTime );
+        return scheduleAfter( delay, refresh );
+    }
+
+    /**
+     * Compute the next refresh fire-time: {@code delay-time} (local wall-clock
+     * time of day) on the calendar day that {@code now + period} lands on. If
+     * that snapped instant is already in the past (a short period, or {@code now}
+     * later in the day than {@code delay-time}), it is pushed to the next day —
+     * the result is always strictly after {@code now}. Pure and deterministic so
+     * it can be unit-tested without the scheduler's executor or wall-clock.
+     */
+    static LocalDateTime computeNextFire( LocalDateTime now, Duration period, LocalTime delayTime )
+    {
         LocalDateTime scheduled = LocalDateTime.of( now.plus( period ).toLocalDate(), delayTime );
-        // Defensive: with a short period the snapped time could already be past —
-        // never schedule in the past; push to the next day at delay-time.
         if ( !scheduled.isAfter( now ) )
         {
             scheduled = scheduled.plusDays( 1 );
         }
-        Duration delay = Duration.between( now, scheduled );
-        nextRefreshAtRef.set( scheduled.atZone( ZoneId.systemDefault() ).toInstant() );
+        return scheduled;
+    }
 
-        LOG.infof( "Token refresh scheduled for %s (in %s) — period=%s, delay-time=%s",
-                   scheduled, delay, period, delayTime );
+    /**
+     * Schedule a refresh after an explicit {@code delay}, cancelling any pending
+     * one (only a single refresh is ever in flight). Package-private seam used
+     * by {@link #scheduleNext(Runnable)} and exercised directly by tests, so the
+     * executor mechanics (fire-once, replace, cancel, exception containment) can
+     * be verified without waiting on the wall-clock {@code delay-time} anchor.
+     */
+    Duration scheduleAfter( Duration delay, Runnable refresh )
+    {
+        cancel();
+        nextRefreshAtRef.set( Instant.now().plus( delay ) );
         ScheduledFuture< ? > future = executor.schedule( () ->
                                                          {
                                                              try
