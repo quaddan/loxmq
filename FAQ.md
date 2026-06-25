@@ -326,8 +326,10 @@ activate automatically (the Token panel also shows
 
 ### What exactly does "Refresh token" do?
 
-Triggers the same refresh as the automatic 24h scheduler, but
-on demand. Sends `jdev/sys/refreshjwt/{hash}/{user}` (encrypted)
+Triggers the same refresh as the automatic scheduler (by default
+every 24 h — `token.refresh.period` — anchored at the local
+`token.refresh.delay-time`, default `04:30:00`), but on demand.
+Sends `jdev/sys/refreshjwt/{hash}/{user}` (encrypted)
 over the WS and waits for the async reply that updates
 `expiresAt` of the token on the binding side.
 
@@ -519,7 +521,7 @@ Will disappear as soon as a re-indexed 2.6.0+ version is released on Maven Centr
 ### `Unrecognized configuration key "quarkus.dev-ui.always-include"`
 
 Not in progress. The property was removed — no longer exists
-in Quarkus 3.36.3. If you see it, it's an out-of-date
+in Quarkus 3.37.0. If you see it, it's an out-of-date
 config file.
 
 ### The browser says "Not secure" despite a valid Let's Encrypt cert

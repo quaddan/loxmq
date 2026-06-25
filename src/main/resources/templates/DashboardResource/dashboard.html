@@ -173,7 +173,7 @@
             font-weight: 600;
             text-transform: uppercase;
         }
-        .badge.down { background: var(--accent-down); color: #fff; }
+        .badge.down { background: #b62324; color: #fff; }  /* same red as the btn-disconnect buttons */
         .badge.up { background: var(--accent-up); color: #000; }
         .badge.warn { background: var(--accent-warn); color: #000; }
         /* Neutral/idle badge — grey, not red. Used for non-error "resting"
@@ -272,6 +272,9 @@
         footer nav.footer-links { color: var(--fg-dim); }
         a { color: var(--accent); }
     </style>
+    <!-- Shared responsive overrides — must load AFTER the inline <style> above
+         so its mobile rules win by source order. See css/mobile.css. -->
+    <link rel="stylesheet" href="/css/mobile.css?v=8">
 </head>
 <body>
     <header>
@@ -317,13 +320,12 @@
                     <span><span data-i18n="dashboard.panel.miniserver">Miniserver</span> — <span data-i18n="dashboard.panel.connection">Config</span></span>
                 </h2>
                 <dl>
-                    <dt data-i18n="dashboard.dt.host">Host</dt>           <dd>{config.miniserver.connection.host}</dd>
+                    <dt data-i18n="dashboard.dt.host">Host</dt>           <dd><strong>{config.miniserver.connection.host}</strong></dd>
                     <dt data-i18n="dashboard.dt.port">Port</dt>           <dd>{config.miniserver.connection.port}</dd>
                     <dt data-i18n="dashboard.dt.uuid">UUID</dt>           <dd>{config.miniserver.app.id}</dd>
-                    <dt data-i18n="dashboard.dt.permission">Permission</dt>     <dd>{config.miniserver.app.permission}</dd>
                     <dt data-i18n="dashboard.dt.preferred">Preferred</dt>      <dd>{#if config.miniserver.connection.secure}<span class="badge up">SECURE</span> (https/wss){#else}<span class="badge warn">PLAIN</span> (http/ws){/if}</dd>
                     <dt data-i18n="dashboard.dt.effective">Effective</dt>      <dd>{#if effectiveMode == 'SECURE'}<span class="badge up">SECURE</span>{#else}<span class="badge warn">PLAIN</span>{/if} {effectiveEndpoint}</dd>
-                    <dt data-i18n="dashboard.dt.webSocket">WebSocket</dt>      <dd>{wsEndpoint}</dd>
+                    <dt data-i18n="dashboard.dt.webSocket">WebSocket</dt>      <dd>{#if effectiveMode == 'SECURE'}<span class="badge up">SECURE</span>{#else}<span class="badge warn">PLAIN</span>{/if} {wsEndpoint}</dd>
                     {#if downgradeReason.isPresent()}
                     <dt data-i18n="dashboard.dt.downgrade">Downgrade</dt>      <dd><span class="badge down">DOWNGRADED</span> {downgradeReason.get()}</dd>
                     {/if}
@@ -393,7 +395,7 @@
                 <dl>
                     {#if identity.isPresent()}
                     <dt data-i18n="dashboard.dt.serial">Serial</dt>     <dd>{identity.get().serial}</dd>
-                    <dt data-i18n="dashboard.dt.version">Version</dt>    <dd>{identity.get().version}</dd>
+                    <dt data-i18n="dashboard.dt.version">Version</dt>    <dd>{#if firmwareChecked}{#if firmwareUpToDate}<span class="badge up" data-i18n="dashboard.fw.upToDate">up to date</span> {identity.get().version}{#else}<span class="badge warn" data-i18n="dashboard.fw.updateAvailable">update available</span> {identity.get().version} → {firmwareLatest.get()}{/if}{#else}{identity.get().version}{/if}</dd>
                     <dt data-i18n="dashboard.dt.generation">Generation</dt> <dd><span class="badge up">{identity.get().generation}</span></dd>
                     <dt data-i18n="dashboard.dt.https">HTTPS</dt>      <dd>
                         {#switch identityHttpsStatus.orElse('UNKNOWN')}
@@ -403,8 +405,7 @@
                             {#case 'UNKNOWN'}<span class="badge warn">UNKNOWN</span> (unrecognised httpsStatus){/case}
                         {/switch}
                     </dd>
-                    <dt data-i18n="dashboard.dt.address">Address</dt>    <dd>{identity.get().address}</dd>
-                    <dt data-i18n="dashboard.dt.local">Local</dt>      <dd>{identity.get().local ?: 'no'}</dd>
+                    <dt data-i18n="dashboard.dt.local">Local</dt>      <dd>{#if identity.get().local}<span class="badge up" data-i18n="users.option.yes">YES</span>{#else}<span class="badge warn" data-i18n="users.option.no">NO</span>{/if}</dd>
                     <dt data-i18n="dashboard.dt.sdcard">SD card</dt>   <dd>
                         {#if sdCardPresent}
                             {#if sdCardHealthy}<span class="badge up" data-i18n="dashboard.sdcard.ok">OK</span>{#else}<span class="badge down" data-i18n="dashboard.sdcard.error">ERROR</span>{/if}
@@ -437,13 +438,13 @@
                     <span><span data-i18n="dashboard.panel.mqtt">MQTT Broker</span> — <span data-i18n="dashboard.panel.connection">Config</span></span>
                 </h2>
                 <dl>
-                    <dt data-i18n="dashboard.dt.protocol">Protocol</dt>  <dd>{config.transport.connection.protocol}</dd>
-                    <dt data-i18n="dashboard.dt.host">Host</dt>      <dd>{config.transport.connection.host}</dd>
+                    <dt data-i18n="dashboard.dt.host">Host</dt>      <dd><strong>{config.transport.connection.host}</strong></dd>
                     <dt data-i18n="dashboard.dt.port">Port</dt>      <dd>{config.transport.connection.port}</dd>
+                    <dt data-i18n="dashboard.dt.protocol">Protocol</dt>  <dd>{#if config.transport.connection.secure}<span class="badge up">SECURE</span>{#else}<span class="badge warn">PLAIN</span>{/if} {config.transport.connection.protocol}</dd>
                     <dt data-i18n="dashboard.dt.path">Path</dt>      <dd>{config.transport.connection.path.orElse('(none)')}</dd>
                     <dt data-i18n="dashboard.dt.clientId">Client ID</dt> <dd>{config.transport.connection.clientId}</dd>
                     <dt data-i18n="dashboard.dt.mode">Mode</dt>      <dd>{config.transport.mode}</dd>
-                    <dt data-i18n="dashboard.dt.qos">QoS</dt>       <dd>{config.transport.topics.qos}</dd>
+                    <dt data-i18n="dashboard.dt.qos">QoS</dt>       <dd>{#if config.transport.topics.qos == 2}<span class="badge up">2</span>{#else if config.transport.topics.qos == 1}<span class="badge warn">1</span>{#else}<span class="badge down">{config.transport.topics.qos}</span>{/if}</dd>
                     <dt data-i18n="dashboard.status.connected">Connected</dt> <dd>
                         {#if brokerConnected}
                             <span class="badge up" data-i18n="users.option.yes">YES</span>
@@ -521,7 +522,7 @@
                 <dl>
                     {#if tokenPresent}
                     <dt data-i18n="dashboard.dt.expiresAt">Expires at</dt>  <dd>{tokenExpiresAt.get().formatLocal}</dd>
-                    <dt data-i18n="dashboard.dt.rights">Rights</dt>      <dd>{tokenRights.get()} <span class="meta">(bitfield)</span></dd>
+                    <dt data-i18n="dashboard.dt.nextRefresh">Next refresh</dt>  <dd>{#if nextTokenRefreshAt.isPresent()}{nextTokenRefreshAt.get().formatLocal}{#else}<span class="badge muted">—</span>{/if}</dd>
                     <dt data-i18n="dashboard.dt.status">Status</dt>      <dd>
                         {#if tokenExpired.get()}
                             <span class="badge down">EXPIRED</span>

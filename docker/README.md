@@ -21,7 +21,7 @@ Images live on Docker Hub at
 | `:native`              | GraalVM native binary (~175 MB)   | `linux/amd64` only       | x86-64 server / NAS — smallest, instant start       |
 | `:jvm`                 | Temurin 25 fast-jar (~360 MB)     | `linux/amd64`, `arm64`   | ARM hosts (Raspberry Pi, ARM NAS, Apple silicon)    |
 | `:latest`              | same as `:jvm` (multi-arch)       | `linux/amd64`, `arm64`   | "just give me something that runs anywhere"         |
-| `:1.0.2-jvm` / `-native` | a specific release              | as above                 | pinning a version                                   |
+| `:1.1.0-jvm` / `-native` | a specific release              | as above                 | pinning a version                                   |
 
 > Multi-arch (`arm64`) manifests are produced by the release workflow
 > (`.github/workflows/release.yml`); an image pushed manually from a

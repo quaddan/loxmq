@@ -16,6 +16,16 @@ quarkus:
     # means HTTPS is simply not configured.
     insecure-requests: enabled
 
+    # Dev only: tell the browser to cache NOTHING. The dashboard CSS/JS and the
+    # Qute pages change constantly while iterating, and mobile Safari/Brave cache
+    # them so aggressively that edits don't show without a manual cache wipe.
+    # `no-store` with no `path` applies to every response and ends the fight in
+    # dev. Prod keeps normal caching — the `?v=` query on the mobile.css <link>
+    # busts that on each release.
+    header:
+      "Cache-Control":
+        value: no-store
+
   # verbose logging while iterating.
   # The admin command client runs at TRACE so the operator sees every
   # wire-level admin exchange (getkey / autht / user + group mutations).

@@ -9,6 +9,57 @@ and this project adheres to [Semantic Versioning 2.0](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-25
+
+### Capabilities
+
+- **Responsive web UI.** The five management pages (dashboard, `/states`,
+  `/schedules`, `/users`, `/logs`) now adapt to phones and narrow desktop
+  windows. A shared `css/mobile.css` overlay (loaded after each page's inline
+  styles) collapses the header and grids, shrinks buttons, makes the tab bar
+  scrollable, and wraps every wide table in a horizontally scrollable
+  `.table-scroll` frame so nothing overflows the viewport. Includes the iOS
+  WebKit `<select>` fix (`width:100%`, since Mobile Safari sizes a `<select>`
+  to its widest `<option>` and ignores `max-width`).
+- **Firmware up-to-date check.** Once per session (on `MiniserverConnectedEvent`)
+  the new `FirmwareUpdateService` fetches Loxone's public
+  `https://update.loxone.com/updatecheck.xml`, picks the `<update>` block for
+  the detected generation (`ms` for GEN1, `ms2` for GEN2), decodes the packed
+  `LatestRelease` version (`17000331` → `17.0.3.31`) and compares it with the
+  installed `MiniserverVersion`. The dashboard Identity panel shows a green
+  *up to date* badge or a yellow *update available* badge with the newest
+  version. Best-effort and isolated — the only outbound internet call in the
+  otherwise LAN-only binding; any failure is swallowed and simply yields no
+  badge. The Compact channel (`msc`) is not handled (a Compact is seen as
+  GEN2).
+- **Next token-refresh timestamp** is now displayed in the dashboard Token
+  panel, just below *Expires at*.
+
+### Changed
+
+- **Quarkus 3.36.3 → 3.37.0** (minor bump). Stack version references synced
+  across `README.md` (badge + stack table), `ARCHITECTURE.md`, `FAQ.md` and
+  the `pom.xml` comments.
+- **Token refresh is now anchored at `token.refresh.delay-time`.** Previously
+  the refresh fired at `now + token.refresh.period`, ignoring the configured
+  time-of-day (dead config). `TokenRefreshScheduler` now computes the date
+  `now + period` lands on and schedules the refresh at `delay-time` that day
+  (rolling to the next day if the instant has already passed), and exposes the
+  next-refresh `Instant` for the dashboard.
+- **Dashboard refinements:**
+  - `PLAIN` / `SECURE` badges on both the Miniserver WebSocket row and the
+    MQTT Protocol row (the Miniserver HTTP row already had one).
+  - QoS shown as a coloured badge — green `2`, yellow `1`, red `0`.
+  - *Local* rendered as a badge (green `YES` / yellow `NO`) matching the
+    secure/plain colours.
+  - Miniserver and MQTT host values set in **bold**; MQTT panel reordered to
+    Host → Port → Protocol.
+  - The red used by the `down`/error badges now matches the *Disconnect*
+    buttons (`#b62324`).
+  - Removed three redundant/technical rows: *Rights* (Token), *Permission*
+    (Miniserver connection) and *Address* (Identity — duplicated the
+    connection host).
+
 ## [1.0.2] - 2026-06-21
 
 ### Capabilities
@@ -94,6 +145,7 @@ and this project adheres to [Semantic Versioning 2.0](https://semver.org/spec/v2
 - `README.md` — Docker Pulls badge; the Docker section points at Docker
   Hub. `INSTALL.md` §8 — same registry switch and measured sizes.
 
-[Unreleased]: https://github.com/quaddan/loxmq/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/quaddan/loxmq/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/quaddan/loxmq/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/quaddan/loxmq/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/quaddan/loxmq/compare/v1.0.0...v1.0.1

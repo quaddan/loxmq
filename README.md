@@ -4,70 +4,66 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/quaddan/loxmq)](https://hub.docker.com/r/quaddan/loxmq)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/java-25%20LTS-orange.svg)](https://openjdk.org/projects/jdk/25/)
-[![Quarkus](https://img.shields.io/badge/quarkus-3.36.3-4695EB.svg)](https://quarkus.io)
+[![Quarkus](https://img.shields.io/badge/quarkus-3.37.0-4695EB.svg)](https://quarkus.io)
 [![MQTT](https://img.shields.io/badge/MQTT-v5-660066.svg)](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
 
-> **Production-grade bridge between a Loxone Miniserver and an MQTT v5 broker.**
->
-> Designed to easily connect a Loxone Miniserver to Home Assistant or any other
-> MQTT consumer.
->
-> 1. Decodes Loxone Miniserver states in real time.
-> 2. Republishes them on an MQTT v5 broker.
-> 3. Routes inbound MQTT commands back to the Miniserver.
-> 4. Exposes a web admin interface (users, groups, schedules, logs, check SD card health).
+# Production-grade bridge between a Loxone Miniserver and an MQTT v5 broker.
+
+Designed to easily connect a Loxone Miniserver to Home Assistant or any other
+MQTT consumer.
+
+1. Decodes Loxone Miniserver states in real time.
+2. Republishes them on an MQTT v5 broker.
+3. Routes inbound MQTT commands back to the Miniserver.
+4. Exposes a **responsive** web admin interface:
+    - Dashboard (Miniserver Loxone and MQTT server connection infos and state).
+    - Users and groups administration.
+    - Schedules.
+    - Application logs.
+    - Check SD card health.
+    - Check if latest firmware is installed.
 
 ---
 
 ## Professional-grade — because it runs the place you live
 
-Home automation is not a toy. When software controls the lights,
-heating, access and blinds of a real home, *"mostly working"* is not
-good enough — it has to be there every single day, silently, the way a
-fuse box is. **`loxmq` is engineered as infrastructure**: install it
-once, and it just stays up.
+Home automation is **NOT a toy**.   
+When software controls the lights, heating, access and blinds of a real home, *"mostly working"* is not
+good enough — it has to be there every single day, silently, the way a fuse box is.   
+**`loxmq` is engineered as infrastructure**: install it once, and it just stays up.
 
-- **Built to run 24/7, unattended.** Every failure mode is handled on
-  purpose — encrypted-session loss, JWT expiry, broker outage,
-  Miniserver reboot. The bridge reconnects by itself with exponential
-  backoff + jitter, refreshes its tokens before they expire, keeps the
-  link warm with measured-RTT keep-alives, and continuously reports its
-  own health. A transient glitch heals itself instead of becoming a
-  3 a.m. manual intervention.
+### Built to run 24/7, unattended.
 
-- **Powered by Quarkus — one of the leading modern Java frameworks.**
-  `loxmq` is built on [Quarkus](https://quarkus.io), the *Supersonic
-  Subatomic Java* framework, together with the proven cloud-native
-  MicroProfile stack (Health, Metrics, Config, Fault Tolerance). This
-  is a current, professionally-maintained foundation — not a
-  hand-rolled script you will be afraid to touch in a year.
+- Every failure mode is handled on purpose — encrypted-session loss, JWT expiry, broker outage, Miniserver reboot.
+- The bridge reconnects by itself with exponential backoff + jitter, refreshes its tokens before they expire, keeps the link warm with measured-RTT keep-alives, and continuously reports its
+  own health.
+- A transient glitch heals itself instead of becoming a 3 a.m. manual intervention.
 
-- **Compiled to a native binary: near-instant start, minimal
-  footprint.** Through GraalVM / Mandrel ahead-of-time compilation, the
-  production build is a single self-contained executable that **boots
-  in ~50 ms** and lives in **50-80 MB of RAM** — no JVM warm-up, no
-  container required. It restarts in the blink of an eye and leaves your
-  home server's resources to your home.
+### Compiled to a native binary
 
-- **Security taken seriously, continuously.** The dependency tree is
-  regularly audited (Trivy + OWASP Dependency-Check — methodology in
-  [SECURITY.md](./SECURITY.md)); when a vulnerability appears, the fix
-  is developed and shipped as a priority. Credentials never live in the
-  repository or in the binary, the inbound MQTT surface is hardened
+- Near-instant start, minimal footprint.
+
+- Through GraalVM / Mandrel ahead-of-time compilation, the production build is a single self-contained executable that **boots in ~50 ms** and lives in **50-80 MB of RAM** — no JVM warm-up, no container required.
+- It restarts in the blink of an eye and leaves your home server's resources to your home.
+
+### Security taken seriously, continuously.
+
+- The dependency tree is regularly audited (Trivy + OWASP Dependency-Check — methodology in
+  [SECURITY.md](./SECURITY.md)); when a vulnerability appears, the fix is developed and shipped as a priority. Credentials never live in the repository or in the binary, the inbound MQTT surface is hardened
   against replay and oversized payloads, and the attack surface is kept
   deliberately small.
 
-- **A real admin interface — not just a config file.** A clean,
-  multilingual web UI (FR / EN / DE) lets you watch Miniserver states
-  stream in live, manage users and groups, edit operating-mode
-  schedules, and read the server logs — straight from the browser, with
-  no Loxone Config round-trip. Underneath, a full REST API and
-  Prometheus metrics are there whenever you want to automate or
-  integrate.
+### A real admin interface — not just a config file.
 
-The result: **the dependability of an appliance, the transparency of
-open source, and the comfort of a polished UI** — for the one system in
-your house you cannot afford to have flaky.
+- A clean, multilingual web UI (FR / EN / DE) lets you watch Miniserver states
+  stream in live, manage users and groups, edit operating-mode schedules, and read the server logs — straight from the browser, with no Loxone Config round-trip. Underneath, a full REST API and
+  Prometheus metrics are there whenever you want to automate or integrate.
+
+## The result
+
+<span style="color:orange; font-weight:bold">The dependability of an appliance, the transparency of
+open source, and the comfort of a polished UI</span>
+— for the one system in your house you cannot afford to have flaky.
 
 ---
 
@@ -113,13 +109,13 @@ home-automation tools. **`loxmq` bridges the gap**:
 - **SD-card health check**: the Miniserver's on-device SD-card
   self-test (`jdev/sys/sdtest`) runs once per session; the dashboard
   shows OK / ERROR plus the read/write throughput and usage report.
+- **Latest firmware version check.**
 - **Native observability**: real-time dashboard, Prometheus metrics,
   MicroProfile health checks, structured logs.
 - **Industrialisable deployment**: standalone native binary
   (~88 MB, ~50 ms startup), systemd units, bootstrap / deploy scripts.
 
-Designed to run **24/7** (LXC Proxmox + systemd recommended), with no
-runtime outbound Internet dependency.
+Designed to run **24/7** (LXC Proxmox + systemd recommended).
 
 ---
 
@@ -131,23 +127,23 @@ address, and user / room / control names) is blurred in these captures.
 
 **Dashboard** (`/`) — Miniserver & MQTT connection, identity, keepalive, token.
 
-![loxmq — dashboard](assets/screenshots/dashboard.jpg)
+![loxmq — dashboard](assets/screenshots/dashboard.webp)
 
 **Live states** (`/states`) — real-time decoded states, filterable by type / room / category / name.
 
-![loxmq — live states](assets/screenshots/live-states.jpg)
+![loxmq — live states](assets/screenshots/live-states.webp)
 
 **Schedules** (`/schedules`) — the Miniserver operating-mode calendar (full CRUD).
 
-![loxmq — schedules](assets/screenshots/schedules.jpg)
+![loxmq — schedules](assets/screenshots/schedules.webp)
 
 **Users** (`/users`) — users & groups audit and guarded management.
 
-![loxmq — users](assets/screenshots/users.jpg)
+![loxmq — users](assets/screenshots/users.webp)
 
 **Logs** (`/logs`) — log-file viewer with severity filter and live tail.
 
-![loxmq — logs](assets/screenshots/logs.jpg)
+![loxmq — logs](assets/screenshots/logs.webp)
 
 ---
 
@@ -275,12 +271,13 @@ handled.
 
 | Aspect               | Value                                                                                                                                                                                                                  |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Version              | **1.0.2** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
-| Stack                | Java 25 LTS · Quarkus 3.36.3 · `quarkus-hivemq-client` 2.5.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
+| Version              | **1.1.0** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
+| Stack                | Java 25 LTS · Quarkus 3.37.0 · `quarkus-hivemq-client` 2.5.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
 | MicroProfile         | Health · Metrics (Micrometer) · OpenAPI · Fault Tolerance · Config                                                                                                                                                     |
 | TLS                  | Wildcard `*.<domain>` Let's Encrypt on the binding's HTTP server side. On the Miniserver side: automatic resolution based on `httpsStatus` returned by `jdev/cfg/apiKey` (transparent plain/secure switch).            |
 | Packaging            | **JVM fast-jar** (~2 s startup) + **native binary** (~88 MB, ~50 ms startup, 50-80 MB RSS, standalone) + **two mutually exclusive systemd units** `loxmq-jvm.service` / `loxmq-native.service` (recommended for prod). |
 | Internationalisation | Multilingual UI **FR / EN / DE** with combobox in the header. Automatic detection on `navigator.language`, override persisted in `localStorage`.                                                                       |
+| Responsive           | All five pages (dashboard, states, schedules, users, logs) adapt to phones and narrow desktop windows — collapsing grids, scrollable tab bar and tables, no horizontal overflow (`css/mobile.css`).                    |
 | Tests                | Unit tests (`./mvnw test`) + Integration tests (`./mvnw verify -Pintegration`) against packaged artifact, including Testcontainers Mosquitto.                                                                          |
 
 ---
@@ -341,6 +338,9 @@ handled.
   schedules. See endpoint table below.
 - **Web UI**: dashboard + pages `/states` (live), `/schedules`,
   `/users`, `/logs`. Vanilla JS (no framework) + HTMX + Qute.
+- **Responsive**: all five pages adapt to phones and narrow desktop
+  windows — collapsing grids, scrollable tab bar, every wide table in a
+  horizontally scrollable frame, no viewport overflow (`css/mobile.css`).
 - **Auto-refresh 30 s** + Server-Sent Events
   `/api/v1/state/stream` for instant reload on session/MQTT
   transitions.
@@ -353,8 +353,10 @@ handled.
 ### 5. Observability
 
 - **Dashboard**: Miniserver sections (config / identity incl. SD-card
-  health / token / keepalive / actions), MQTT (config / actions),
-  session state + bootstrap status live.
+  health and **firmware up-to-date** badge / token incl. **next-refresh**
+  timestamp / keepalive / actions), MQTT (config / actions), session state
+    + bootstrap status live. Coloured badges throughout — PLAIN/SECURE per
+      connection, QoS level, Local.
 - **MicroProfile Health**: `/q/health/live` (process up),
   `/q/health/ready` (Miniserver session + broker connected).
 - **Prometheus**: `/q/metrics` — counters publishes/drops/reconnects,
@@ -447,14 +449,14 @@ diagnostics.
 
 ## Maven and Quarkus profiles
 
-| Profile             | Activation                      | Behaviour                                                     |
-|---------------------|---------------------------------|---------------------------------------------------------------|
-| `dev`               | `./mvnw quarkus:dev` (implicit) | plain HTTP, verbose logs, Swagger UI open, live-reload        |
-| `staging`           | `-Dquarkus.profile=staging`     | HTTPS via wildcard, JSON logs, Swagger UI open                |
-| `prod`              | `-Dquarkus.profile=prod`        | HTTPS only, JSON logs, Swagger UI open, HTTP→HTTPS redirect   |
-| `test`              | auto (`./mvnw test`)            | Mosquitto mocks + fake miniserver                             |
-| Maven `integration` | `./mvnw verify -Pintegration`   | enables Failsafe ITs (`skipITs=false`)                        |
-| Maven `native`      | `./mvnw package -Pnative`       | native image build via Mandrel / GraalVM                      |
+| Profile             | Activation                      | Behaviour                                                   |
+|---------------------|---------------------------------|-------------------------------------------------------------|
+| `dev`               | `./mvnw quarkus:dev` (implicit) | plain HTTP, verbose logs, Swagger UI open, live-reload      |
+| `staging`           | `-Dquarkus.profile=staging`     | HTTPS via wildcard, JSON logs, Swagger UI open              |
+| `prod`              | `-Dquarkus.profile=prod`        | HTTPS only, JSON logs, Swagger UI open, HTTP→HTTPS redirect |
+| `test`              | auto (`./mvnw test`)            | Mosquitto mocks + fake miniserver                           |
+| Maven `integration` | `./mvnw verify -Pintegration`   | enables Failsafe ITs (`skipITs=false`)                      |
+| Maven `native`      | `./mvnw package -Pnative`       | native image build via Mandrel / GraalVM                    |
 
 ---
 

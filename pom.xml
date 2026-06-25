@@ -7,7 +7,7 @@
 
     <groupId>com.quaddan.iot</groupId>
     <artifactId>loxmq</artifactId>
-    <version>1.0.2</version>
+    <version>1.1.0</version>
     <packaging>quarkus</packaging>
 
     <name>LoxMQ</name>
@@ -48,7 +48,7 @@
 
         <skipITs>true</skipITs>
 
-        <!-- Build target. Quarkus 3.36.3 officially supports Java 17 / 21 / 25 (LTS).
+        <!--
          We target Java 25 LTS — Mandrel/GraalVM does NOT yet support Java 26
          class files (bytecode v70). Setting the javac release flag to 25
          produces v69 bytecode that Mandrel can analyse.
@@ -73,13 +73,9 @@
         <maven.version>3.9.16</maven.version>
         <maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
 
-        <!-- Quarkus 3.36.3 — current stable, October-November 2026 release window.
-             LTS support: 3.20, 3.27, and (planned) 3.43. We deliberately track the
-             non-LTS line on this rolling-current project; switch to the nearest
-             LTS branch for long-running production deployments if needed. -->
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.36.3</quarkus.platform.version>
+        <quarkus.platform.version>3.37.0</quarkus.platform.version>
 
         <!-- Plugins -->
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
@@ -97,7 +93,7 @@
              dep blows up native-image on the Netty UnpooledByteBufAllocator$
              InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf class). The
              extension version targets the Quarkus 3.26.4 BOM internally; our
-             3.36.3 BOM overrides cleanly via import-scope (standard
+             3.37.0 BOM overrides cleanly via import-scope (standard
              Quarkiverse pattern).
 
              Note: 2.5.0 ships a Jandex v10 index (generated with Jandex 2.x).
@@ -112,7 +108,7 @@
         <quarkus-hivemq-client.version>2.5.0</quarkus-hivemq-client.version>
         <hivemq-mqtt-client.version>1.3.14</hivemq-mqtt-client.version>
 
-        <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.36.3's BOM manages the
+        <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.37.0's BOM manages the
              entire io.netty.* stack (4.1.x line). Pinning netty-codec-http separately to
              4.2.x dragged in netty-codec-base + netty-codec-compression while leaving
              netty-handler / netty-codec / netty-transport at 4.1.x, breaking the HTTP
@@ -298,7 +294,7 @@
             <groupId>org.graalvm.nativeimage</groupId>
             <artifactId>svm</artifactId>
             <!-- Version aligned with the org.graalvm.sdk:nativeimage 25.0.3
-                 that Quarkus 3.36.3 transitively brings via Mandrel. SVM
+                 that Quarkus 3.37.0 transitively brings via Mandrel. SVM
                  is NOT managed by the Quarkus BOM so we pin explicitly. -->
             <version>${org.graalvm.nativeimage.svm.version}</version>
             <scope>provided</scope>
@@ -306,7 +302,7 @@
 
         <!-- Required at runtime by HiveMQ when WebSocket / WSS transport is in use.
              Marked optional in HiveMQ's POM so it must be declared explicitly here.
-             No <version> on purpose: Quarkus 3.36.3's BOM manages the whole io.netty.*
+             No <version> on purpose: Quarkus 3.37.0's BOM manages the whole io.netty.*
              stack as a coherent set (4.1.x line). See the property block comment for
              the netty-codec-http 4.2 disaster story. -->
         <dependency>

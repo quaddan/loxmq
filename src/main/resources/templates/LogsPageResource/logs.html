@@ -155,6 +155,9 @@
         }
         footer.foot a { color: var(--accent); text-decoration: none; }
     </style>
+    <!-- Shared responsive overrides — must load AFTER the inline <style> above
+         so its mobile rules win by source order. See css/mobile.css. -->
+    <link rel="stylesheet" href="/css/mobile.css?v=8">
 </head>
 <body>
     <header>

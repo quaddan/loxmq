@@ -24,6 +24,9 @@ The binding runs within a **LAN + VPN** perimeter (see `ARCHITECTURE.md
 - Inbound MQTT payload cap at 4 KB
   (`loxone.transport.security.max-inbound-payload-bytes`), retained
   drop on topics `…/command` + `…/api`.
+- **One — and only one — outbound internet egress** since v1.1.0: the
+  firmware-update check (`FirmwareUpdateService`) calls Loxone's public
+  `https://update.loxone.com` once per session. Fully analysed in §1.2.
 
 For per-layer details, see `ARCHITECTURE.md §6 TLS plumbing`
 
@@ -31,7 +34,7 @@ For per-layer details, see `ARCHITECTURE.md §6 TLS plumbing`
 
 ### 1.1 Credentials — no secret in the repo
 
-The Quarkus profiles (`application{,-dev,-staging,-prod}.yml`)
+The Quarkus profiles (`application{,-dev,-staging,-prod}.yaml`)
 contain **no password**. The 4 sensitive credentials are
 referenced via environment variables with `CHANGE_ME` fallback
 (satisfies `@NotBlank` but auth fails at runtime
@@ -64,6 +67,44 @@ otherwise). It then deposits `/etc/loxmq/env` (mode 0640, owner
 
 No secret is ever committed nor transmitted in clear anywhere
 other than `/etc/loxmq/env` on the target LXC.
+
+### 1.2 Outbound network egress — firmware-update check (v1.1.0+)
+
+Through v1.0.x the binding made **no outbound internet call** (LAN + VPN
+only). Version 1.1.0 introduces exactly one, narrowly-scoped egress:
+`FirmwareUpdateService` fetches Loxone's public
+`https://update.loxone.com/updatecheck.xml` once per session (on each
+`MiniserverConnectedEvent`) to tell the operator whether the installed
+Miniserver firmware is the latest published Release. Security properties:
+
+- **No SSRF surface** — the URL is a hard-coded constant; no part of it
+  derives from user input, MQTT payloads, or Miniserver responses.
+- **Full TLS validation** — built on the JDK `java.net.http.HttpClient`
+  with default trust store + hostname verification. It does **not**
+  inherit the Miniserver-side `tls-skip-hostname-verification` relaxation
+  (§4.3); a certificate or hostname mismatch aborts the call.
+- **No data exfiltration / privacy-preserving** — the request is a plain
+  `GET` with an `Accept: application/xml` header. No Miniserver serial,
+  firmware version, username or LAN identifier is sent; the version
+  comparison runs locally after downloading the public catalogue.
+- **No XML-parser attack surface** — the response is matched with two
+  narrow regexes (channel block + `LatestRelease` version), never handed
+  to an XML parser, so XXE / external-entity / entity-expansion vectors do
+  not apply.
+- **Bounded & best-effort** — 8 s connect + 10 s request timeouts; any
+  failure (offline, timeout, non-200, unparseable, MITM) is swallowed and
+  simply yields no firmware badge. It never propagates to the session nor
+  blocks bootstrap.
+- **No new dependency** — uses the JDK HTTP client only; 1.1.0 added no
+  Maven dependency (consistent with the conservative dependency policy).
+
+**Residual hardening item (low)**: the response body is read unbounded
+(`HttpResponse.BodyHandlers.ofString()`). A compromised or MITM'd
+`update.loxone.com` could return an oversized body and pressure the heap;
+TLS validation makes that require breaking Loxone's certificate, so the
+risk is low. Capping the body length is a possible future hardening.
+Operators wanting strictly zero egress can block `update.loxone.com` at
+the firewall — the binding degrades gracefully (no badge, no error).
 
 ## 2. CVE audit methodology
 
@@ -180,6 +221,61 @@ the CPE-confusion source for #2/#4, still false positives. A full Trivy +
 OWASP run (the §2 commands) remains the formal audit; this delta confirms the
 patch introduced no new or changed dependency.
 
+### 3.5 Re-verification on Quarkus 3.37.0 (2026-06-25)
+
+Re-scan after the 3.36.1 → 3.37.0 minor bump (shipped with loxmq 1.1.0),
+via dependency-tree delta (`./mvnw dependency:tree`). The flagged
+transitive components either **did not change** or were **bumped within
+their line** (risk only decreases):
+
+| Component                                     | §3.4 (3.36.1)   | 3.37.0            | Effect on verdict                    |
+|-----------------------------------------------|-----------------|-------------------|--------------------------------------|
+| `netty-*` (codec-mqtt, transport, …)          | 4.1.133.Final   | **4.1.135.Final** | still 4.1.x — #15/#16 stand          |
+| `micrometer-registry-prometheus-simpleclient` | 1.16.5          | **1.16.6**        | client lib — #1/#13 stand (FP)       |
+| `protobuf-java`                               | 4.33.2          | **4.35.0**        | #12 stands (FP — Python json_format) |
+| `hibernate-validator`                         | 9.1.0.Final     | 9.1.0.Final       | unchanged — #2/#3/#4/#5 stand        |
+| `opentelemetry-semconv` [`-incubating`]       | 1.40.0 / -alpha | 1.40.0 / -alpha   | unchanged — #6–#11 stand             |
+| `simpleclient`                                | 0.16.0          | 0.16.0            | unchanged — #14 stands               |
+| `quarkus-*` artifacts                         | 3.36.1          | 3.37.0            | CPE-confusion source for #2/#4 (FP)  |
+
+**No new flagged transitive component** appeared, and **no new Maven
+dependency** was introduced by 1.1.0 (the firmware check uses the JDK HTTP
+client — §1.2). So the §3.2 verdicts stand verbatim: **0 actionable CVE**.
+As in §3.4, this delta confirms the bump introduced nothing new; a full
+Trivy + OWASP run (the §2 commands) remains the formal audit.
+
+### 3.6 Application surface — v1.1.0 changes
+
+- **New outbound egress** (`FirmwareUpdateService`): fully analysed in
+  §1.2 — no SSRF, full TLS, regex (no XML parser), no data sent, bounded,
+  best-effort. One residual low-risk hardening item (unbounded response
+  body).
+- **Reduced info disclosure on the dashboard** (unauthenticated, LAN-only
+  by design — §11.h): the Token *Rights* bitmask, the Miniserver
+  *Permission* field and the duplicate Identity *Address* row were removed
+  from the home screen. Low-sensitivity details, but their removal trims
+  what an on-LAN viewer sees.
+- **New badges expose no secret**: the firmware badge shows only the
+  public latest-Release version string; the next-token-refresh row shows a
+  schedule timestamp, never a token value.
+
+### 3.7 Formal scan run — 2026-06-25 (loxmq 1.1.0)
+
+Ran the §2 reproducible commands against the 1.1.0 tree (Quarkus 3.37.0,
+build `target/quarkus-app/` populated):
+
+| Scan                          | Result                                                                     |
+|-------------------------------|----------------------------------------------------------------------------|
+| **Trivy** `fs --scanners vuln` (HIGH, CRITICAL) | `pom.xml` → **0 vulnerabilities**. Reproduces §3.1.       |
+| **Trivy** `fs --scanners secret`                | 1 HIGH `AsymmetricPrivateKey` at `certs/privkey.pem` → **false positive** — `git ls-files certs/` is empty (nothing tracked; local operator-side cert copy). Reproduces §3.3. |
+| **OWASP Dependency-Check** `11.1.1`             | **Not completed this pass** — the NVD full-DB update could not finish. First attempt (no API key) stalled at ~3 % (`startIndex=10000`). Second attempt **with a valid NVD API key** reached ~12 % then aborted on repeated server-side errors (*"NVD API request failures are occurring; retrying for the 7 time"*, `startIndex≈48000`) — i.e. NIST's NVD API was degraded at audit time, independent of the key. The §3.5 dependency-tree delta covers the transitive-version check for this release instead. |
+
+**Net**: confirmed **0 actionable CVE** (Trivy direct + §3.5 transitive
+delta). The full OWASP pass is blocked only by NVD API availability, not by
+the binding. Re-run when NVD is healthy with a free NVD API key
+(`export NVD_API_KEY=…` then add `-Dnvd.api.key=$NVD_API_KEY` to the §2
+command) — a healthy NVD build then takes ~2-3 min instead of ~45.
+
 ## 4. Recommendations
 
 ### 4.1 Continuous maintenance
@@ -196,17 +292,21 @@ patch introduced no new or changed dependency.
    `mvn dependency-check:check -DfailBuildOnCVSS=8` that fails the
    build on CVSS ≥ 8 NON-suppressed. List of suppressions
    (confirmed false positives) kept in `dependency-check-suppressions.xml`
-   to be created.
+   to be created. **Provide an NVD API key** (free from
+   `nvd.nist.gov/developers/request-an-api-key`) as a CI secret
+   `NVD_API_KEY` and pass `-Dnvd.api.key=${NVD_API_KEY}`; without it the
+   NVD update is rate-limited by NIST and routinely stalls (see §3.7).
 
 ### 4.2 Open item — Netty version
 
-Findings #15 + #16 (CVE-2026-42582) clear at Netty ≥ 4.2.13.Final. The 3.36.x
-BOM deliberately keeps Netty on the **4.1.x line** (4.2.x broke the HTTP
-pipeline — see the `netty-codec-http` note in `pom.xml`), and the 3.36.1
-re-verification (§3.4) confirms it is still `4.1.133.Final`. So these two
-findings do **not** auto-resolve on the 3.36.x line; revisit when a future
-BOM ships 4.2.13+ without the pipeline regression. **Not urgent** —
-non-exploitable in our usage (no HTTP/3 / QPACK path).
+Findings #15 + #16 (CVE-2026-42582) clear at Netty ≥ 4.2.13.Final. The
+Quarkus BOM deliberately keeps Netty on the **4.1.x line** (4.2.x broke the
+HTTP pipeline — see the `netty-codec-http` note in `pom.xml`), and the
+3.37.0 re-verification (§3.5) confirms it is now `4.1.135.Final` (still
+4.1.x — bumped from 4.1.133, but not to the 4.2.13+ that closes the
+finding). So these two findings do **not** auto-resolve on the 3.3x line;
+revisit when a future BOM ships 4.2.13+ without the pipeline regression.
+**Not urgent** — non-exploitable in our usage (no HTTP/3 / QPACK path).
 
 ### 4.3 Deferred items
 
@@ -268,5 +368,7 @@ exploitable surface in `loxmq`.
 
 ---
 
-*Baseline document v1.0.0 (2026-05-30). Keep in sync
-with CVE audits.*
+*Baseline document v1.0.0 (2026-05-30); last updated 2026-06-25 for
+loxmq 1.1.0 (§1.2 firmware egress, §3.5 Quarkus 3.37.0 re-verification,
+§3.6 application-surface review, §3.7 formal Trivy scan run). Keep in
+sync with CVE audits.*

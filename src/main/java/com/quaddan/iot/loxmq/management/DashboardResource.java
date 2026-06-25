@@ -13,6 +13,8 @@ import com.quaddan.iot.loxmq.miniserver.connection.EndpointResolver;
 import com.quaddan.iot.loxmq.miniserver.identity.MiniserverIdentity;
 import com.quaddan.iot.loxmq.miniserver.session.KeepAliveScheduler;
 import com.quaddan.iot.loxmq.miniserver.session.SessionTracker;
+import com.quaddan.iot.loxmq.miniserver.session.TokenRefreshScheduler;
+import com.quaddan.iot.loxmq.miniserver.state.FirmwareUpdateService;
 import com.quaddan.iot.loxmq.miniserver.state.MiniserverState;
 import com.quaddan.iot.loxmq.miniserver.state.SdCardHealthService;
 import com.quaddan.iot.loxmq.miniserver.state.SdCardStatus;
@@ -71,7 +73,13 @@ public class DashboardResource
     KeepAliveScheduler keepAliveScheduler;
 
     @Inject
+    TokenRefreshScheduler tokenRefreshScheduler;
+
+    @Inject
     SdCardHealthService sdCardHealth;
+
+    @Inject
+    FirmwareUpdateService firmwareUpdateService;
 
     @ConfigProperty( name = "quarkus.application.name" )
     String applicationName;
@@ -129,15 +137,21 @@ public class DashboardResource
                                                          // bootstrap above).
                                                          boolean tokenPresent,
                                                          Optional< Instant > tokenExpiresAt,
-                                                         Optional< Long > tokenRights,
                                                          Optional< Boolean > tokenExpired,
+                                                         Optional< Instant > nextTokenRefreshAt,
                                                          // SD-card self-test (jdev/sys/sdtest) — Miniserver
                                                          // Identity panel. sdCardPresent gates the row's
                                                          // OK/ERROR badge vs a "pending" placeholder; detail
                                                          // is the verbatim performance report.
                                                          boolean sdCardPresent,
                                                          boolean sdCardHealthy,
-                                                         String sdCardDetail );
+                                                         String sdCardDetail,
+                                                         // Firmware up-to-date check (Loxone updatecheck.xml).
+                                                         // firmwareChecked gates the badge; latest is the newest
+                                                         // published Release version for this generation.
+                                                         boolean firmwareChecked,
+                                                         boolean firmwareUpToDate,
+                                                         Optional< String > firmwareLatest );
     }
 
     @GET
@@ -160,6 +174,7 @@ public class DashboardResource
         // template renders without poking the Optional through Qute's
         // value-resolver chain in native image (same pattern as token block).
         var sdOpt = sdCardHealth.status();
+        var fwOpt = firmwareUpdateService.status();
         return Templates.dashboard( applicationName,
                                     applicationVersion,
                                     activeProfile,
@@ -182,11 +197,14 @@ public class DashboardResource
                                     sessionTracker.lastHandshakeDuration().map( d -> d.toMillis() ),
                                     tokenOpt.isPresent(),
                                     tokenOpt.map( t -> t.expiresAt() ),
-                                    tokenOpt.map( t -> ( long ) t.tokenRights() ),
                                     tokenOpt.map( t -> t.expired() ),
+                                    tokenRefreshScheduler.nextRefreshAt(),
                                     sdOpt.isPresent(),
                                     sdOpt.map( SdCardStatus::healthy ).orElse( false ),
-                                    sdOpt.map( SdCardStatus::detail ).orElse( "" ) );
+                                    sdOpt.map( SdCardStatus::detail ).orElse( "" ),
+                                    fwOpt.isPresent(),
+                                    fwOpt.map( FirmwareUpdateService.Status::upToDate ).orElse( false ),
+                                    fwOpt.map( s -> s.latest().toString() ) );
     }
 
     /** Bucket the RTT (ms) into a CSS badge class. {@code "up"} for snappy

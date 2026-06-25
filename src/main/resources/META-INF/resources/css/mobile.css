@@ -1,0 +1,200 @@
+/* ============================================================================
+ * mobile.css — responsive overrides shared by all five UI pages
+ * (dashboard, states, schedules, users, logs).
+ *
+ * Loaded AFTER each page's inline <style> (the <link> sits just before
+ * </head>), so equal-specificity rules here win by source order. The five
+ * pages share one design system — same :root variables and the same
+ * header / nav.tabs / .lang-switcher / .panel / .modal-card / button chrome —
+ * so these rules target that shared structure once instead of per page.
+ *
+ * "Detect mobile" the right way: viewport-width media queries. They adapt to
+ * any narrow screen AND to rotation, never depend on a hard-coded device list,
+ * and never misfire on a spoofed user-agent. No JavaScript, no UA sniffing.
+ *
+ * Primary breakpoint 768px covers every phone in portrait (incl. iPhone Pro
+ * Max, ~430 CSS-px) and small tablets; the 420px block trims the narrowest
+ * handsets a little further.
+ * ========================================================================== */
+
+/* Wide fixed-width data tables (states/schedules/users) sit in a .table-scroll
+ * wrapper that scrolls horizontally instead of widening the whole page. This is
+ * the iOS-reliable containment: overflow-x:auto on a real <div> IS honoured by
+ * mobile Safari/Brave (WebKit), whereas overflow-x:hidden on <body> and
+ * display:block on the <table> itself (which disables its colgroup) are NOT —
+ * that is exactly why the fixed ~900px events table pushed the page, and the
+ * filters with it, off the right edge on iPhone while desktop Chrome contained
+ * it. Always on (no media query): the table is ~900px on any screen, so it can
+ * overflow a narrow desktop window too; on a wide screen the panel is roomy and
+ * no scrollbar appears. */
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+
+@media (max-width: 768px) {
+
+    /* ---- Header: wrap it, shrink the oversized logo, scroll the tab bar ----
+       The desktop header is a non-wrapping flex row with a 96px-tall logo,
+       five nav pills and the language picker — far wider than a phone. */
+    header {
+        flex-wrap: wrap;
+        padding: 0.6rem 0.9rem;
+        gap: 0.5rem 0.75rem;
+    }
+    header h1 img.logo { height: 44px; }   /* was 96px — it ate the whole bar */
+
+    /* Tabs drop onto their own full-width row and scroll sideways rather than
+       piling up into half-tappable rows. */
+    header nav.tabs {
+        order: 3;
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        gap: 0.4rem;
+        padding-bottom: 0.15rem;
+    }
+    header nav.tabs a {
+        padding: 0.35rem 0.7rem;
+        font-size: 0.78rem;
+        white-space: nowrap;          /* keep each pill on one line while scrolling */
+    }
+    header .lang-switcher { font-size: 0.78rem; }
+
+    /* ---- Content: reclaim the side padding a ~400px screen can't spare ---- */
+    main   { padding: 1rem 0.9rem; }
+    .panel { padding: 1rem; }
+    footer { padding: 0.8rem 0.9rem; }
+
+    /* ---- Buttons: smaller, and they go full-width once their grids stack ---- */
+    button { padding: 0.45rem 0.7rem; font-size: 0.82rem; }
+
+    /* ---- Collapse every multi-column layout grid to a single column.
+       !important beats the higher-specificity inline rules (id-scoped modal
+       and form grids) without having to restate each long selector here. ---- */
+    .tabpanel-grid,
+    .dashboard-cols,
+    .actions-row,
+    .btn-pair,
+    .form-row,
+    form.entry-form,
+    #detail-modal dl {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* States filter bar: stack the TYPE / ROOM / CATEGORY / NAME selects
+       vertically. CRITICAL: the page's .filters also carries flex-wrap:wrap;
+       column + wrap = "column-wrap", where align-items:stretch sizes every item
+       to the WIDEST one — and a single long room/category <option> blew that
+       width past the screen (verified: reproduced and fixed in a static probe).
+       flex-wrap:nowrap forces one real column whose items stretch to the
+       container (viewport-bounded) instead. The counter's 12rem min-width is
+       dropped too. */
+    .filters { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+    .counter { min-width: 0; }
+
+    /* (Wide-table horizontal scroll is handled in its own 1024px block below —
+       it has to cover phone LANDSCAPE too, which is wider than 768px.) */
+
+    /* ---- Modal cards: near-full-width and scrollable. !important overrides
+       the inline style="max-width:540px" on the group-detail card, which would
+       otherwise overflow a phone viewport. ---- */
+    .modal-card {
+        max-width: 95vw !important;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 1rem;
+    }
+}
+
+/* Narrowest handsets (~360px): trim a little more so nothing clips. */
+@media (max-width: 420px) {
+    header h1 img.logo { height: 38px; }
+    main   { padding: 0.8rem 0.6rem; }
+    .panel { padding: 0.8rem; }
+    button { font-size: 0.8rem; }
+}
+
+/* ----------------------------------------------------------------------------
+ * Wide data tables — separate, WIDER breakpoint (1024px).
+ *
+ * These overflow even in phone LANDSCAPE: an iPhone 13 Pro Max is ~926 CSS-px
+ * wide in landscape, well above the 768px phone-portrait breakpoint, so the
+ * page fell back to the desktop layout and the multi-column tables spilled past
+ * the side edges on every page except the (table-less) dashboard.
+ *
+ * Containing them up to 1024px covers portrait + landscape phones and small
+ * tablets / narrow desktop windows; each table scrolls inside its own box
+ * instead of pushing the whole page sideways. display:block applies only to the
+ * <table> element, so thead/tbody keep their table display and columns stay
+ * aligned; nowrap keeps cells legible while scrolling. True desktop (≥1024px)
+ * is untouched and renders tables normally.
+ * -------------------------------------------------------------------------- */
+@media (max-width: 1024px) {
+
+    /* Belt-and-braces: the page itself can NEVER scroll sideways. The wide data
+       tables below keep their own horizontal scroll, so no content is lost —
+       this only stops stray elements from spilling past the screen edge. No
+       page uses position:sticky, so this clip is safe. */
+    html, body { overflow-x: hidden; }
+
+    /* Form controls go fluid — this is the real fix for the schedules page:
+       a JS-injected cron input carried an inline style="min-width:20rem" (320px)
+       that pushed the form wider than a landscape phone, and inline styles need
+       !important to beat. min-width:0 also kills the classic grid/flex blow-out
+       (form controls default to min-width:auto, which refuses to shrink). */
+    input, select, textarea {
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box;
+    }
+
+    /* iOS/WebKit FIX (the actual states-filters bug): a <select> sizes to its
+       widest <option> and does NOT honour max-width — so the Pièce/Catégorie
+       lists (long room/category names) spilled past their correctly-sized panel
+       on iPhone even with max-width:100%. width:100% forces the select box to
+       the container width; that is what actually constrains a <select> on mobile
+       Safari/Brave. Stack the filters too so each select gets a full row.
+       Scoped to .filters — the header language picker stays compact. */
+    .filters { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+    .filters select { width: 100% !important; }
+
+    /* Media never wider than the viewport. */
+    img, svg, video, canvas { max-width: 100%; }
+
+    /* Multi-column FORM grids stack so wide fields can't overflow in landscape.
+       (Only forms collapse here — the dashboard's layout columns stay 2-up in
+       landscape, which works fine and is what you wanted.) */
+    form.entry-form,
+    .form-row,
+    #detail-modal dl,
+    #edit-modal form.entry-form {
+        grid-template-columns: 1fr !important;
+    }
+
+    /* Stacking the schedule Add/Edit form had two side effects to undo:
+       1. the submit button sat in the old `auto` column and, once that became a
+          full-width 1fr cell, stretched to the whole width ("immense"). Keep it
+          content-sized and left-aligned.
+       2. the "Sent to Miniserver →" cron preview is an inline
+          position:absolute div (top:100% of its label); out of flow, the now
+          full-width button rendered on top of it. Put it back in normal flow so
+          it takes its own line under the field instead of being covered. */
+    form.entry-form > button {
+        justify-self: start;
+        width: auto;
+    }
+    form.entry-form [style*="position: absolute"] {
+        position: static !important;
+    }
+
+    /* Wide data tables KEEP their natural column widths and scroll horizontally
+       inside their .table-scroll wrapper (defined near the top of this file)
+       rather than being crammed to fit — cramming produced one-letter-per-line
+       headers AND still overflowed when a cell held a long unbreakable value
+       (e.g. "1.7239076741953377E7"). The wrapper's overflow-x:auto contains the
+       table so it never widens the panel; the filter selects (width:100% of the
+       now-correctly-sized panel) then sit inside their frame. */
+    .table-scroll > table { width: max-content; min-width: 100%; }
+}

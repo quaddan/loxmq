@@ -172,7 +172,7 @@ The native binary is the **reference production artifact**: ~50 ms startup,
             -Dquarkus.native.container-build=true -DskipTests
 ```
 
-Binary: `target/loxmq-1.0.0-runner` (~88 MB). See **[NATIVE.md](./NATIVE.md)**
+Binary: `target/loxmq-1.1.0-runner` (~88 MB). See **[NATIVE.md](./NATIVE.md)**
 for the build internals and GraalVM caveats.
 
 > For a **production** image, build with `-Dquarkus.profile=prod` so the
@@ -184,10 +184,10 @@ for the build internals and GraalVM caveats.
 
 ```bash
 # Launch directly (no JVM):
-./target/loxmq-1.0.0-runner -Dquarkus.profile=dev
+./target/loxmq-1.1.0-runner -Dquarkus.profile=dev
 
 # Smoke test without contacting a real Miniserver (no auto bootstrap):
-./target/loxmq-1.0.0-runner -Dquarkus.profile=dev -Dloxone.boot.auto-start=false
+./target/loxmq-1.1.0-runner -Dquarkus.profile=dev -Dloxone.boot.auto-start=false
 ```
 
 Environment variables (`source .env`) and `-D…` properties are honoured
@@ -315,7 +315,7 @@ sudo chown root:loxmq /etc/loxmq/env && sudo chmod 0640 /etc/loxmq/env
 
 ```bash
 # Native binary, built with the prod profile (§5.1 with -Dquarkus.profile=prod):
-sudo install -o loxmq -g loxmq -m 0755 target/loxmq-1.0.0-runner /opt/loxmq/loxmq
+sudo install -o loxmq -g loxmq -m 0755 target/loxmq-1.1.0-runner /opt/loxmq/loxmq
 
 # systemd unit (native shown; use loxmq-jvm.service for the fast-jar):
 sudo cp service/loxmq-native.service /etc/systemd/system/

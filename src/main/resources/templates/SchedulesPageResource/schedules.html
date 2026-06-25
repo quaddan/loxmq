@@ -238,6 +238,9 @@
         }
         a { color: var(--accent); }
     </style>
+    <!-- Shared responsive overrides — must load AFTER the inline <style> above
+         so its mobile rules win by source order. See css/mobile.css. -->
+    <link rel="stylesheet" href="/css/mobile.css?v=8">
 </head>
 <body>
     <header>
@@ -350,6 +353,7 @@
                     <button id="refresh-now" type="button" data-i18n-attr="title:common.refreshNow" title="Refresh now">↻ <span data-i18n="common.refresh">Refresh</span></button>
                 </div>
             </div>
+            <div class="table-scroll">
             <table class="entries" id="entries-table">
                 <thead>
                     <tr>
@@ -367,6 +371,7 @@
                 </thead>
                 <tbody><!-- populated by JS --></tbody>
             </table>
+            </div>
         </section>
     </main>
 

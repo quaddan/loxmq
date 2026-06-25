@@ -19,12 +19,12 @@ see the project's git history.
 ./mvnw package -Pnative -Dquarkus.profile=dev \
             -Dquarkus.native.container-build=true -DskipTests
 
-# The binary is in target/loxmq-1.0.0-runner (~88 MB)
+# The binary is in target/loxmq-1.1.0-runner (~88 MB)
 # Launch directly (no JVM needed):
-./target/loxmq-1.0.0-runner
+./target/loxmq-1.1.0-runner
 
 # With env override (e.g. disable auto-start for smoke test):
-./target/loxmq-1.0.0-runner -Dloxone.boot.auto-start=false
+./target/loxmq-1.1.0-runner -Dloxone.boot.auto-start=false
 ```
 
 Notes:

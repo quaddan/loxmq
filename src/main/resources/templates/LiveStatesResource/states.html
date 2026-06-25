@@ -239,6 +239,9 @@
         }
         a { color: var(--accent); }
     </style>
+    <!-- Shared responsive overrides — must load AFTER the inline <style> above
+         so its mobile rules win by source order. See css/mobile.css. -->
+    <link rel="stylesheet" href="/css/mobile.css?v=8">
 </head>
 <body>
     <header>
@@ -334,6 +337,7 @@
 
         <section class="panel">
             <h2 data-i18n="states.events.title">Events</h2>
+            <div class="table-scroll">
             <table class="states" id="states-table">
                 <colgroup>
                     <col class="col-time">
@@ -360,6 +364,7 @@
                 </thead>
                 <tbody><!-- rows inserted at the top by handleLiveState() --></tbody>
             </table>
+            </div>
         </section>
     </main>
 

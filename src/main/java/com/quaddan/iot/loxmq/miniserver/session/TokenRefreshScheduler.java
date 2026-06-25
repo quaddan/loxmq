@@ -14,6 +14,11 @@ import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -32,10 +37,13 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * <h3>Cadence</h3>
  * Reads {@code loxone.miniserver.security.token.refresh.period} (default
- * {@code PT24H}). Re-scheduled after each successful refresh — so a refresh
- * goes out every 24h regardless of token expiry, far ahead of the 3-month
- * boundary. Conservative on purpose: a refresh failure (network blip, miniserver
- * restart) won't immediately put the token in jeopardy.
+ * {@code PT24H}) and {@code ...refresh.delay-time} (default {@code 04:30:00}).
+ * Each refresh is anchored to {@code delay-time} (local wall-clock) on the
+ * calendar day that {@code now + period} lands on — a 24h period fires tomorrow
+ * at {@code delay-time}, a 36h period the day after, etc. Re-scheduled after
+ * each successful refresh, far ahead of the ~3-month token expiry. Conservative
+ * on purpose: a refresh failure (network blip, miniserver restart) won't
+ * immediately put the token in jeopardy.
  *
  * <h3>{@link Startup} — eager initialization</h3>
  * Same reason as {@link ReconnectScheduler}: bean is first touched from the
@@ -62,7 +70,8 @@ public class TokenRefreshScheduler
     LoxoneConfig config;
 
     private       ScheduledExecutorService                executor;
-    private final AtomicReference< ScheduledFuture< ? > > pendingRef = new AtomicReference<>();
+    private final AtomicReference< ScheduledFuture< ? > > pendingRef       = new AtomicReference<>();
+    private final AtomicReference< Instant >              nextRefreshAtRef = new AtomicReference<>();
 
     @PostConstruct
     void init()
@@ -86,14 +95,35 @@ public class TokenRefreshScheduler
     }
 
     /**
-     * Schedule the next refresh at {@code now + period}. Cancels any
-     * previously-scheduled refresh; only one is ever pending at a time.
+     * Schedule the next refresh at the configured {@code delay-time} (local
+     * wall-clock time of day) on the calendar day that {@code now + period}
+     * lands on: with a 24h period the refresh fires tomorrow at
+     * {@code delay-time}; with 36h it fires the day after, at {@code delay-time};
+     * and so on. Cancels any previously-scheduled refresh; only one is ever
+     * pending at a time. Returns the computed delay until that moment.
      */
     public Duration scheduleNext( Runnable refresh )
     {
         cancel();
-        Duration period = config.miniserver().security().token().refresh().period();
-        LOG.infof( "Token refresh scheduled in %s", period );
+        var       refreshCfg = config.miniserver().security().token().refresh();
+        Duration  period     = refreshCfg.period();
+        LocalTime delayTime  = refreshCfg.delayTime();
+
+        // Anchor the refresh to delay-time on the day where now+period falls,
+        // rather than firing at an arbitrary instant `period` after the last one.
+        LocalDateTime now       = LocalDateTime.now();
+        LocalDateTime scheduled = LocalDateTime.of( now.plus( period ).toLocalDate(), delayTime );
+        // Defensive: with a short period the snapped time could already be past —
+        // never schedule in the past; push to the next day at delay-time.
+        if ( !scheduled.isAfter( now ) )
+        {
+            scheduled = scheduled.plusDays( 1 );
+        }
+        Duration delay = Duration.between( now, scheduled );
+        nextRefreshAtRef.set( scheduled.atZone( ZoneId.systemDefault() ).toInstant() );
+
+        LOG.infof( "Token refresh scheduled for %s (in %s) — period=%s, delay-time=%s",
+                   scheduled, delay, period, delayTime );
         ScheduledFuture< ? > future = executor.schedule( () ->
                                                          {
                                                              try
@@ -104,20 +134,27 @@ public class TokenRefreshScheduler
                                                              {
                                                                  LOG.warnf( "Token refresh runnable threw: %s", e.getMessage() );
                                                              }
-                                                         }, period.toMillis(), TimeUnit.MILLISECONDS );
+                                                         }, delay.toMillis(), TimeUnit.MILLISECONDS );
         pendingRef.set( future );
-        return period;
+        return delay;
     }
 
     /** Cancel the pending refresh, if any. Idempotent. */
     public void cancel()
     {
+        nextRefreshAtRef.set( null );
         ScheduledFuture< ? > prev = pendingRef.getAndSet( null );
         if ( prev != null )
         {
             prev.cancel( false );
             LOG.debug( "Token refresh cancelled" );
         }
+    }
+
+    /** The instant the next refresh is scheduled to fire, if one is pending. */
+    public Optional< Instant > nextRefreshAt()
+    {
+        return Optional.ofNullable( nextRefreshAtRef.get() );
     }
 
     /** True if a refresh is scheduled but not yet fired. */

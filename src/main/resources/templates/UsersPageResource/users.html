@@ -278,6 +278,9 @@
         }
         a { color: var(--accent); }
     </style>
+    <!-- Shared responsive overrides — must load AFTER the inline <style> above
+         so its mobile rules win by source order. See css/mobile.css. -->
+    <link rel="stylesheet" href="/css/mobile.css?v=8">
 </head>
 <body>
     <header>
@@ -315,6 +318,7 @@
                     <button id="open-create" type="button" class="btn-primary">+ <span data-i18n="users.add.user">New user</span></button>
                 </div>
             </div>
+            <div class="table-scroll">
             <table id="users-table">
                 <thead>
                     <tr>
@@ -327,6 +331,7 @@
                 </thead>
                 <tbody><!-- populated by JS --></tbody>
             </table>
+            </div>
             <div id="status-bar"></div>
         </section>
 
@@ -335,6 +340,7 @@
                 <h2 style="margin: 0; border: 0; padding: 0;"><span data-i18n="users.tab.groups">Groups</span> (<span id="groups-count">…</span>)</h2>
                 <button id="open-create-group" type="button" class="btn-primary">+ <span data-i18n="users.add.group">New group</span></button>
             </div>
+            <div class="table-scroll">
             <table id="groups-table">
                 <thead>
                     <tr>
@@ -346,6 +352,7 @@
                 </thead>
                 <tbody><!-- populated by JS --></tbody>
             </table>
+            </div>
         </section>
     </main>
 

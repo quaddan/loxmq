@@ -197,7 +197,7 @@ The active `ExecStart` in the unit already points to `quarkus-app/quarkus-run.ja
 mvn -DskipTests -Pnative -Dquarkus.profile=prod -Dquarkus.native.container-build=true package
 
 # Push
-scp target/loxmq-1.0.0-runner \
+scp target/loxmq-1.1.0-runner \
     prod:/opt/loxmq/loxmq
 ssh prod 'sudo chown loxmq:loxmq /opt/loxmq/loxmq && \
           sudo chmod 0755 /opt/loxmq/loxmq'
