@@ -30,5 +30,10 @@ jobs:
           java-version: '25'
           cache: maven
 
-      - name: Build + unit + integration tests
-        run: mvn -B -ntp verify -Pintegration
+      # Integration tests (-Pintegration) are NOT run in CI: they exercise the
+      # live Loxone Miniserver + MQTT broker, which live on a private LAN and
+      # are unreachable from GitHub-hosted runners. `mvn verify` keeps the unit
+      # tests + quality gates (spotless, enforcer) and skips ITs (skipITs=true
+      # by default in the pom). Run ITs locally with `mvn verify -Pintegration`.
+      - name: Build + unit tests
+        run: mvn -B -ntp verify
