@@ -75,7 +75,7 @@
 
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.37.1</quarkus.platform.version>
+        <quarkus.platform.version>3.37.4</quarkus.platform.version>
 
         <!-- Plugins -->
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
@@ -105,7 +105,7 @@
              disappear once a re-indexed 2.6.0+ is released. Track
              https://github.com/quarkiverse/quarkus-hivemq-client/releases
              to bump at that point. -->
-        <quarkus-hivemq-client.version>2.5.0</quarkus-hivemq-client.version>
+        <quarkus-hivemq-client.version>2.5.1</quarkus-hivemq-client.version>
         <hivemq-mqtt-client.version>1.3.14</hivemq-mqtt-client.version>
 
         <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.37.0's BOM manages the
@@ -121,7 +121,7 @@
              Lets the operator bypass via `-Dspotless.skip=true` for rushed
              releases if the linter trips on whitespace. -->
         <spotless.skip>false</spotless.skip>
-        <org.graalvm.nativeimage.svm.version>25.0.3</org.graalvm.nativeimage.svm.version>
+        <org.graalvm.nativeimage.svm.version>25.0.4</org.graalvm.nativeimage.svm.version>
 
         <!-- Test toggles. skipTests defaults to false here (Quarkus convention) so plain
              `mvn package` actually runs the unit suite; CI flips this off explicitly.
