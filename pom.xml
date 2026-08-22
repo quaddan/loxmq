@@ -121,7 +121,7 @@
              Lets the operator bypass via `-Dspotless.skip=true` for rushed
              releases if the linter trips on whitespace. -->
         <spotless.skip>false</spotless.skip>
-        <org.graalvm.nativeimage.svm.version>25.0.4</org.graalvm.nativeimage.svm.version>
+        <org.graalvm.nativeimage.svm.version>25.0.4.1</org.graalvm.nativeimage.svm.version>
 
         <!-- Test toggles. skipTests defaults to false here (Quarkus convention) so plain
              `mvn package` actually runs the unit suite; CI flips this off explicitly.
