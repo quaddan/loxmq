@@ -75,7 +75,7 @@
 
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.38.1</quarkus.platform.version>
+        <quarkus.platform.version>3.38.3</quarkus.platform.version>
 
         <!-- Plugins -->
         <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
@@ -116,7 +116,7 @@
 
         <assertj-core.version>3.27.7</assertj-core.version>
         <versions-maven-plugin.version>2.21.0</versions-maven-plugin.version>
-        <spotless-maven-plugin.version>3.9.0</spotless-maven-plugin.version>
+        <spotless-maven-plugin.version>3.10.0</spotless-maven-plugin.version>
         <!-- spotless.skip — left at `false` by default (the check runs in CI).
              Lets the operator bypass via `-Dspotless.skip=true` for rushed
              releases if the linter trips on whitespace. -->
