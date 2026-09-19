@@ -75,7 +75,7 @@
 
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.39.1</quarkus.platform.version>
+        <quarkus.platform.version>3.39.3</quarkus.platform.version>
 
         <!-- Plugins -->
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
@@ -105,7 +105,7 @@
              disappear once a re-indexed 2.6.0+ is released. Track
              https://github.com/quarkiverse/quarkus-hivemq-client/releases
              to bump at that point. -->
-        <quarkus-hivemq-client.version>2.5.1</quarkus-hivemq-client.version>
+        <quarkus-hivemq-client.version>2.6.0</quarkus-hivemq-client.version>
         <hivemq-mqtt-client.version>1.3.14</hivemq-mqtt-client.version>
 
         <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.37.0's BOM manages the
@@ -115,8 +115,8 @@
              pipeline (server bound but TCP connections got no response). Let the BOM win. -->
 
         <assertj-core.version>3.27.7</assertj-core.version>
-        <versions-maven-plugin.version>2.21.0</versions-maven-plugin.version>
-        <spotless-maven-plugin.version>3.10.1</spotless-maven-plugin.version>
+        <versions-maven-plugin.version>2.22.0</versions-maven-plugin.version>
+        <spotless-maven-plugin.version>3.10.2</spotless-maven-plugin.version>
         <!-- spotless.skip — left at `false` by default (the check runs in CI).
              Lets the operator bypass via `-Dspotless.skip=true` for rushed
              releases if the linter trips on whitespace. -->
