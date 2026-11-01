@@ -262,8 +262,10 @@ final class Target_offending_class
 }
 ```
 
-The `org.graalvm.nativeimage:svm:25.0.3` (provided scope) provides
+The `org.graalvm.nativeimage:svm:25.0.5` (provided scope) provides
 the `@TargetClass` / `@Alias` / `@RecomputeFieldValue` annotations.
+Pin it to the GraalVM CE line (3-segment, e.g. `25.0.5`) matching the
+Mandrel builder, not the Oracle GraalVM 4-segment line (`25.0.5.0.x`).
 
 Runtime symptom — segfault after a few hundred allocations
 under the affected lib:

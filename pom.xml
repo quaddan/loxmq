@@ -70,8 +70,7 @@
         <java.version>25</java.version>
         <maven.compiler.release>${java.version}</maven.compiler.release>
 
-        <maven.version>3.9.16</maven.version>
-        <maven-enforcer-plugin.version>3.6.2</maven-enforcer-plugin.version>
+        <maven.version>3.10.0</maven.version>
 
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
@@ -79,9 +78,9 @@
 
         <!-- Plugins -->
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
-        <maven-surefire-plugin.version>3.6.0</maven-surefire-plugin.version>
-        <maven-failsafe-plugin.version>3.6.0</maven-failsafe-plugin.version>
-        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+        <maven-surefire-plugin.version>3.6.1</maven-surefire-plugin.version>
+        <maven-failsafe-plugin.version>3.6.1</maven-failsafe-plugin.version>
+        <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
 
         <!-- HiveMQ MQTT Client — MQTT v5, used directly (no Quarkus extension; SmallRye
              Reactive Messaging MQTT is v3 only). -->
@@ -92,23 +91,20 @@
              native-image build pass (the raw com.hivemq:hivemq-mqtt-client
              dep blows up native-image on the Netty UnpooledByteBufAllocator$
              InstrumentedUnpooledUnsafeNoCleanerDirectByteBuf class). The
-             extension version targets the Quarkus 3.26.4 BOM internally; our
-             3.37.0 BOM overrides cleanly via import-scope (standard
+             extension version targets an older Quarkus BOM internally; our
+             3.40.1 BOM overrides cleanly via import-scope (standard
              Quarkiverse pattern).
 
-             Note: 2.5.0 ships a Jandex v10 index (generated with Jandex 2.x).
-             Quarkus 3.36 prefers v11+ (Jandex 3.x) and re-indexes at build
-             time with a warning:
-                 "Reindexing quarkus-hivemq-client-2.5.0.jar,
-                  at least Jandex 3.0 must be used (index version is 10)"
-             The warning is cosmetic (automatic re-indexing, ~150ms) and will
-             disappear once a re-indexed 2.6.0+ is released. Track
-             https://github.com/quarkiverse/quarkus-hivemq-client/releases
-             to bump at that point. -->
+             Note: bumped 2.5.0 -> 2.6.0. 2.5.0 shipped a Jandex v10 index
+             that Quarkus re-indexed at build time with a cosmetic warning
+             ("Reindexing quarkus-hivemq-client-...jar, at least Jandex 3.0
+             must be used"). If 2.6.0 still logs that line the re-index is
+             harmless (~150ms). Track
+             https://github.com/quarkiverse/quarkus-hivemq-client/releases. -->
         <quarkus-hivemq-client.version>2.6.0</quarkus-hivemq-client.version>
         <hivemq-mqtt-client.version>1.3.14</hivemq-mqtt-client.version>
 
-        <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.37.0's BOM manages the
+        <!-- NOTE: no explicit netty-codec-http version. Quarkus 3.40.1's BOM manages the
              entire io.netty.* stack (4.1.x line). Pinning netty-codec-http separately to
              4.2.x dragged in netty-codec-base + netty-codec-compression while leaving
              netty-handler / netty-codec / netty-transport at 4.1.x, breaking the HTTP
@@ -293,9 +289,12 @@
         <dependency>
             <groupId>org.graalvm.nativeimage</groupId>
             <artifactId>svm</artifactId>
-            <!-- Version aligned with the org.graalvm.sdk:nativeimage 25.0.3
-                 that Quarkus 3.37.0 transitively brings via Mandrel. SVM
-                 is NOT managed by the Quarkus BOM so we pin explicitly. -->
+            <!-- Version aligned with the GraalVM CE line of the Mandrel
+                 builder (Quarkus 3.40.1 defaults to the rolling
+                 ubi9-quarkus-mandrel-builder-image:jdk-25 tag -> GraalVM CE
+                 25.0.5). Use the CE 3-segment version (25.0.5), NOT the
+                 Oracle GraalVM 4-segment line (25.0.5.0.x). SVM is NOT
+                 managed by the Quarkus BOM so we pin explicitly. -->
             <version>${org.graalvm.nativeimage.svm.version}</version>
             <scope>provided</scope>
         </dependency>
