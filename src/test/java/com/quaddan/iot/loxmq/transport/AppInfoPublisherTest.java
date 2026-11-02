@@ -79,7 +79,10 @@ class AppInfoPublisherTest
                 MiniserverGeneration.GEN2 );
 
         Instant now = Instant.parse( "2026-05-19T13:00:00Z" );
-        bus.fireAsync( new MiniserverConnectedEvent( now, Optional.of( identity ) ) );
+        // Await ALL async observers of the event (not just this publisher's) so
+        // none — e.g. the shared LoxApp3 publisher — leaks into a later test.
+        bus.fireAsync( new MiniserverConnectedEvent( now, Optional.of( identity ) ) )
+           .toCompletableFuture().get( 5, TimeUnit.SECONDS );
 
         String                 topic = config.transport().topics().publish().appInfo().topic();
         FakeMqttClient.Publish p     = awaitPublishOn( topic );
@@ -111,7 +114,8 @@ class AppInfoPublisherTest
     @Timeout( value = 5, unit = TimeUnit.SECONDS )
     void firesEvenWithoutIdentity() throws Exception
     {
-        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) );
+        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) )
+           .toCompletableFuture().get( 5, TimeUnit.SECONDS );
 
         String                 topic = config.transport().topics().publish().appInfo().topic();
         FakeMqttClient.Publish p     = awaitPublishOn( topic );
@@ -132,8 +136,8 @@ class AppInfoPublisherTest
     void dropWhenDisconnected() throws Exception
     {
         fake.disconnect();
-        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) );
-        Thread.sleep( 200 );
+        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) )
+           .toCompletableFuture().get( 5, TimeUnit.SECONDS );
         assertThat( fake.publishes() ).isEmpty();
     }
 

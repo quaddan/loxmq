@@ -72,7 +72,10 @@ class LoxApp3PublisherTest
         String fixture = "{\"lastModified\":\"2026-05-19 13:00:00\",\"fixture\":\"loxapp3 body\"}";
         cache.store( fixture, "2026-05-19 13:00:00" );    // signature: (json, lastModified)
 
-        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) );
+        // Await the async observer's completion (not just a sleep) so it finishes
+        // inside this test and can never leak a publish into a later one.
+        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) )
+           .toCompletableFuture().get( 5, TimeUnit.SECONDS );
 
         String                 topic = config.transport().topics().publish().loxApp3().topic();
         FakeMqttClient.Publish p     = awaitPublishOn( topic );
@@ -86,8 +89,10 @@ class LoxApp3PublisherTest
     void cacheEmptySkipsPublish() throws Exception
     {
         // No cache.store — load() returns Optional.empty.
-        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) );
-        Thread.sleep( 200 );
+        // Await completion (not a sleep) so the async observer runs and skips
+        // deterministically inside this test, never leaking into a later one.
+        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) )
+           .toCompletableFuture().get( 5, TimeUnit.SECONDS );
         String topic = config.transport().topics().publish().loxApp3().topic();
         assertThat( fake.lastOn( topic ) ).isNull();
     }
@@ -98,8 +103,10 @@ class LoxApp3PublisherTest
     {
         cache.store( "body", "ts" );    // signature: (json, lastModified)
         fake.disconnect();
-        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) );
-        Thread.sleep( 200 );
+        // Await completion so the async observer runs (and drops on disconnected
+        // MQTT) inside this test rather than leaking a publish into a later one.
+        bus.fireAsync( new MiniserverConnectedEvent( Instant.now(), Optional.empty() ) )
+           .toCompletableFuture().get( 5, TimeUnit.SECONDS );
         assertThat( fake.publishes() ).isEmpty();
     }
 
