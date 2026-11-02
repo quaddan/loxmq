@@ -75,18 +75,7 @@ Loxone is a proprietary home-automation system with an encrypted
 WebSocket protocol that is hard to plug directly into open-source
 home-automation tools. **`loxmq` bridges the gap**:
 
-```
-┌──────────────────┐   encrypted WebSocket    ┌─────────┐    MQTT v5     ┌────────────────┐
-│ Loxone Miniserver│ ◄─── RSA + AES + JWT ───►│  loxmq  │ ◄─────────────►│ MQTT broker    │
-│  (LAN)           │     binary               │         │   topics       │ (Mosquitto, …) │
-└──────────────────┘     event-tables         └─────────┘                └────────────────┘
-                                                                                  │
-                                                                                  ▼
-                                                                         ┌────────────────┐
-                                                                         │ Home Assistant │
-                                                                         │ Node-RED, …    │
-                                                                         └────────────────┘
-```
+![loxmq architecture — Loxone Miniserver ↔ loxmq ↔ MQTT v5 broker](assets/diagrams/loxmq-architecture.svg)
 
 > **Both links are securable with TLS.** The Miniserver link is an
 > encrypted WebSocket that negotiates `https` / `wss` automatically

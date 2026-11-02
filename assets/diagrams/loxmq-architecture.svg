@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1040 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="loxmqarch-title loxmqarch-desc" id="loxmq-architecture-root">
+      <title id="loxmqarch-title">loxmq — Loxone Miniserver to MQTT v5 bridge</title>
+      <desc id="loxmqarch-desc">loxmq opens an encrypted WebSocket to a Loxone Miniserver, decodes its state event-tables and republishes them on an MQTT v5 broker for Home Assistant and Node-RED, while an operator drives its web admin surface.</desc>
+
+      <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #loxmq-architecture-root { --color-paper:  #faf9f7;
+      --color-ink:    #1f2430;
+      --color-muted:  #5a6472;
+      --color-accent: #06b6d4;
+      --color-link:   #3b82f6;
+      --font-sans:  'Geist', system-ui, sans-serif;
+      --font-serif: 'Instrument Serif', serif;
+      --font-mono:  'Geist Mono', ui-monospace, monospace; }
+      #loxmq-architecture-root { font-family: var(--font-sans); color: var(--color-ink); }
+      #loxmq-architecture-root .svg-wrap { overflow-x: auto; }</style>
+        <pattern id="loxmq-architecture-dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="#1f2430" fill-opacity="0.08"/>
+        </pattern>
+        <marker id="loxmq-architecture-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon points="0 0, 8 3, 0 6" fill="#5a6472"/></marker>
+        <marker id="loxmq-architecture-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon points="0 0, 8 3, 0 6" fill="#06b6d4"/></marker>
+        <marker id="loxmq-architecture-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto-start-reverse"><polygon points="0 0, 8 3, 0 6" fill="#3b82f6"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#faf9f7"/>
+      <rect width="100%" height="100%" fill="url(#loxmq-architecture-dots)" opacity="0.6"/>
+
+      <!-- ===== LoxMQ logo (same as the docs), decorative, top-right ===== -->
+      <g transform="translate(772,10) scale(0.34)" aria-hidden="true">
+        <!-- LEFT: smart-home house -->
+        <g transform="translate(170, 50)">
+          <path d="M 2,43 L 40,10 L 78,43 L 78,70 L 2,70 Z" fill="#10B981" opacity="0.10"/>
+          <path d="M 2,43 L 40,10 L 78,43 L 78,70 L 2,70 Z" fill="none" stroke="#10B981" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+          <circle cx="40" cy="3"  r="2.5" fill="#06B6D4"/>
+          <circle cx="40" cy="-3" r="2.5" fill="#06B6D4" opacity="0.55"/>
+          <circle cx="40" cy="-9" r="2.5" fill="#06B6D4" opacity="0.28"/>
+          <path d="M 40,46.5 L 43.46,48.5 L 43.46,52.5 L 40,54.5 L 36.54,52.5 L 36.54,48.5 Z" fill="none" stroke="#10B981" stroke-width="1.5" stroke-linejoin="round"/>
+          <line x1="40" y1="46.5" x2="40" y2="42" stroke="#10B981" stroke-width="1.2"/>
+          <circle cx="40" cy="40.5" r="1.3" fill="#10B981"/>
+          <polyline points="43.46,48.5 55,48.5 55,44" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+          <circle cx="55" cy="43" r="1.3" fill="#10B981"/>
+          <polyline points="43.46,52.5 55,52.5 55,57" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+          <circle cx="55" cy="58" r="1.3" fill="#10B981"/>
+          <line x1="40" y1="54.5" x2="40" y2="59" stroke="#10B981" stroke-width="1.2"/>
+          <circle cx="40" cy="60.5" r="1.3" fill="#10B981"/>
+          <polyline points="36.54,52.5 25,52.5 25,57" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+          <circle cx="25" cy="58" r="1.3" fill="#10B981"/>
+          <polyline points="36.54,48.5 25,48.5 25,44" fill="none" stroke="#10B981" stroke-width="1.2" stroke-linejoin="round"/>
+          <circle cx="25" cy="43" r="1.3" fill="#10B981"/>
+        </g>
+        <line x1="138" y1="80"  x2="158" y2="80"  stroke="#10B981" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+        <line x1="130" y1="100" x2="158" y2="100" stroke="#10B981" stroke-width="2" opacity="0.65" stroke-linecap="round"/>
+        <line x1="138" y1="120" x2="158" y2="120" stroke="#10B981" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+        <!-- RIGHT: MQTT broker rings -->
+        <g transform="translate(420, 50)">
+          <circle cx="40" cy="40" r="47" fill="#8B5CF6" opacity="0.10"/>
+          <circle cx="40" cy="40" r="40" fill="none" stroke="#8B5CF6" stroke-width="3"/>
+          <circle cx="40" cy="40" r="28" fill="none" stroke="#3B82F6" stroke-width="3"/>
+          <circle cx="40" cy="40" r="15" fill="#6366F1"/>
+          <circle cx="40" cy="40" r="5" fill="#FFFFFF" opacity="0.9"/>
+          <circle cx="40" cy="0"  r="3" fill="#8B5CF6"/>
+          <circle cx="40" cy="80" r="3" fill="#8B5CF6"/>
+          <circle cx="0"  cy="40" r="3" fill="#8B5CF6"/>
+          <circle cx="80" cy="40" r="3" fill="#8B5CF6"/>
+          <circle cx="68" cy="12" r="2.5" fill="#3B82F6"/>
+          <circle cx="68" cy="68" r="2.5" fill="#3B82F6"/>
+          <circle cx="12" cy="68" r="2.5" fill="#3B82F6"/>
+          <circle cx="12" cy="12" r="2.5" fill="#3B82F6"/>
+        </g>
+        <line x1="502" y1="80"  x2="522" y2="80"  stroke="#8B5CF6" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+        <line x1="502" y1="100" x2="530" y2="100" stroke="#8B5CF6" stroke-width="2" opacity="0.65" stroke-linecap="round"/>
+        <line x1="502" y1="120" x2="522" y2="120" stroke="#8B5CF6" stroke-width="2" opacity="0.45" stroke-linecap="round"/>
+        <path d="M 258,90 Q 340,28 422,90" fill="none" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="3 5" opacity="0.7"/>
+        <circle cx="285" cy="72" r="3"   fill="#10B981"/>
+        <circle cx="312" cy="55" r="3.5" fill="#06B6D4"/>
+        <circle cx="340" cy="46" r="11"  fill="#EF4444" opacity="0.25"/>
+        <circle cx="340" cy="46" r="6.5" fill="#EF4444"/>
+        <circle cx="340" cy="46" r="2.5" fill="#FFFFFF"/>
+        <circle cx="368" cy="55" r="3.5" fill="#6366F1"/>
+        <circle cx="395" cy="72" r="3"   fill="#8B5CF6"/>
+        <text x="340" y="245" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="92" font-weight="700" text-anchor="middle" letter-spacing="-2.5"><tspan fill="#10B981">L</tspan><tspan fill="#06B6D4">o</tspan><tspan fill="#3B82F6">x</tspan><tspan fill="#6366F1">M</tspan><tspan fill="#8B5CF6">Q</tspan></text>
+        <text x="340" y="285" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif" font-size="14" font-weight="400" text-anchor="middle" fill="#64748B" letter-spacing="0.4">Loxone Miniserver bridge · MQTT and beyond</text>
+        <line x1="280" y1="310" x2="332" y2="310" stroke="#94A3B8" stroke-width="1" opacity="0.5"/>
+        <line x1="348" y1="310" x2="400" y2="310" stroke="#94A3B8" stroke-width="1" opacity="0.5"/>
+        <circle cx="340" cy="310" r="3.5" fill="#EF4444"/>
+      </g>
+
+      <!-- loxmq boundary zone (focal, teal dashed) — drawn before arrows and nodes -->
+      <rect x="228" y="104" width="228" height="296" rx="8"
+            fill="#06b6d4" stroke="#06b6d4" stroke-width="1.2" stroke-dasharray="6,4" fill-opacity="0.04"/>
+      <rect x="312" y="98" width="60" height="12" rx="2" fill="#faf9f7"/>
+      <text x="342" y="107" fill="#06b6d4" font-size="7.5" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.16em">LOXMQ</text>
+
+      <!-- ===== Arrows first (behind boxes) ===== -->
+
+      <!-- Operator -> Management (HTTPS) -->
+      <line x1="344" y1="92" x2="344" y2="128" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#loxmq-architecture-arrow-link)"/>
+      <!-- Management -> Miniserver client (commands / admin) -->
+      <line x1="344" y1="192" x2="344" y2="224" stroke="#5a6472" stroke-width="1.2" marker-end="url(#loxmq-architecture-arrow)"/>
+      <!-- Miniserver client -> Transport (decoded states) -->
+      <line x1="344" y1="288" x2="344" y2="320" stroke="#5a6472" stroke-width="1.2" marker-end="url(#loxmq-architecture-arrow)"/>
+
+      <!-- Miniserver <-> client : encrypted WebSocket (accent, bidirectional) -->
+      <line x1="180" y1="256" x2="252" y2="256" stroke="#06b6d4" stroke-width="1.6"
+            marker-start="url(#loxmq-architecture-arrow-accent)" marker-end="url(#loxmq-architecture-arrow-accent)"/>
+
+      <!-- Transport <-> broker : MQTT v5 (link, bidirectional) -->
+      <path d="M 436,352 H 560 Q 568,352 568,344 V 264 Q 568,256 576,256 H 700"
+            fill="none" stroke="#3b82f6" stroke-width="1.3"
+            marker-start="url(#loxmq-architecture-arrow-link)" marker-end="url(#loxmq-architecture-arrow-link)"/>
+
+      <!-- broker -> consumers (subscribe) -->
+      <line x1="840" y1="256" x2="896" y2="256" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#loxmq-architecture-arrow-link)"/>
+
+      <!-- ===== Arrow labels ===== -->
+      <rect x="188" y="238" width="56" height="12" rx="2" fill="#faf9f7"/>
+      <text x="216" y="247" fill="#06b6d4" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">WS SESSION</text>
+
+      <rect x="356" y="108" width="40" height="12" rx="2" fill="#faf9f7"/>
+      <text x="376" y="117" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">HTTPS</text>
+
+      <rect x="272" y="202" width="56" height="12" rx="2" fill="#faf9f7"/>
+      <text x="300" y="211" fill="#5a6472" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">COMMANDS</text>
+
+      <rect x="358" y="298" width="42" height="12" rx="2" fill="#faf9f7"/>
+      <text x="379" y="307" fill="#5a6472" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">STATES</text>
+
+      <rect x="574" y="298" width="50" height="12" rx="2" fill="#faf9f7"/>
+      <text x="599" y="307" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">MQTT v5</text>
+
+      <rect x="852" y="238" width="32" height="12" rx="2" fill="#faf9f7"/>
+      <text x="868" y="247" fill="#3b82f6" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SUB</text>
+
+      <!-- ===== Nodes ===== -->
+
+      <!-- Loxone Miniserver (external) -->
+      <rect x="40" y="224" width="140" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="40" y="224" width="140" height="64" rx="6" fill="#5a6472" stroke="#5a6472" stroke-width="1" fill-opacity="0.10"/>
+      <rect x="48" y="232" width="30" height="12" rx="2" fill="none" stroke="#5a6472" stroke-width="0.8" stroke-opacity="0.45"/>
+      <text x="63" y="241" fill="#5a6472" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+      <text x="110" y="261" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Loxone Miniserver</text>
+      <text x="110" y="277" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">LAN · :443 wss</text>
+
+      <!-- Operator (input / user) -->
+      <rect x="252" y="28" width="184" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="252" y="28" width="184" height="64" rx="6" fill="#5a6472" stroke="#5a6472" stroke-width="1" fill-opacity="0.08"/>
+      <rect x="260" y="36" width="38" height="12" rx="2" fill="none" stroke="#5a6472" stroke-width="0.8" stroke-opacity="0.45"/>
+      <text x="279" y="45" fill="#5a6472" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">USER</text>
+      <text x="344" y="65" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Operator</text>
+      <text x="344" y="81" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">browser · LAN / VPN</text>
+
+      <!-- Management (backend / web + API) -->
+      <rect x="252" y="128" width="184" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="252" y="128" width="184" height="64" rx="6" fill="#ffffff" stroke="#1f2430" stroke-width="1"/>
+      <rect x="260" y="136" width="52" height="12" rx="2" fill="none" stroke="#1f2430" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="286" y="145" fill="#1f2430" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">WEB·API</text>
+      <text x="344" y="165" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Management</text>
+      <text x="344" y="181" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">REST /api/v1 + 7 pages</text>
+
+      <!-- Miniserver client (backend / core) -->
+      <rect x="252" y="224" width="184" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="252" y="224" width="184" height="64" rx="6" fill="#ffffff" stroke="#1f2430" stroke-width="1"/>
+      <rect x="260" y="232" width="34" height="12" rx="2" fill="none" stroke="#1f2430" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="277" y="241" fill="#1f2430" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CORE</text>
+      <text x="344" y="261" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Miniserver client</text>
+      <text x="344" y="277" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">session · crypto · decode</text>
+
+      <!-- Transport (store / MQTT publishers) -->
+      <rect x="252" y="320" width="184" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="252" y="320" width="184" height="64" rx="6" fill="#1f2430" stroke="#5a6472" stroke-width="1" fill-opacity="0.05"/>
+      <rect x="260" y="328" width="36" height="12" rx="2" fill="none" stroke="#5a6472" stroke-width="0.8" stroke-opacity="0.50"/>
+      <text x="278" y="337" fill="#5a6472" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">MQTT</text>
+      <text x="344" y="357" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Transport</text>
+      <text x="344" y="373" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">HiveMQ publishers</text>
+
+      <!-- MQTT broker (cloud / external) -->
+      <rect x="700" y="224" width="140" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="700" y="224" width="140" height="64" rx="6" fill="#1f2430" stroke="#1f2430" stroke-width="1" fill-opacity="0.03" stroke-opacity="0.30"/>
+      <rect x="708" y="232" width="48" height="12" rx="2" fill="none" stroke="#1f2430" stroke-width="0.8" stroke-opacity="0.22"/>
+      <text x="732" y="241" fill="#5a6472" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BROKER</text>
+      <text x="770" y="261" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">MQTT broker</text>
+      <text x="770" y="277" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Mosquitto · MQTT v5</text>
+
+      <!-- Consumers (external) -->
+      <rect x="896" y="224" width="136" height="64" rx="6" fill="#faf9f7"/>
+      <rect x="896" y="224" width="136" height="64" rx="6" fill="#5a6472" stroke="#5a6472" stroke-width="1" fill-opacity="0.10"/>
+      <rect x="904" y="232" width="30" height="12" rx="2" fill="none" stroke="#5a6472" stroke-width="0.8" stroke-opacity="0.45"/>
+      <text x="919" y="241" fill="#5a6472" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+      <text x="964" y="261" fill="#1f2430" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Consumers</text>
+      <text x="964" y="277" fill="#5a6472" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Home Assistant · Node-RED</text>
+
+      <!-- ===== Legend strip ===== -->
+      <line x1="40" y1="430" x2="1000" y2="430" stroke="#1f2430" stroke-width="0.8" stroke-opacity="0.10"/>
+      <text x="40" y="446" fill="#5a6472" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="140" y="440" width="14" height="10" rx="2" fill="#06b6d4" stroke="#06b6d4" stroke-width="1.1" stroke-dasharray="3,2" fill-opacity="0.04"/>
+      <text x="160" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">loxmq boundary</text>
+
+      <rect x="288" y="440" width="14" height="10" rx="2" fill="#5a6472" stroke="#5a6472" stroke-width="1" fill-opacity="0.10"/>
+      <text x="308" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">External / user</text>
+
+      <rect x="420" y="440" width="14" height="10" rx="2" fill="#ffffff" stroke="#1f2430" stroke-width="1"/>
+      <text x="440" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">Service</text>
+
+      <rect x="520" y="440" width="14" height="10" rx="2" fill="#1f2430" stroke="#5a6472" stroke-width="1" fill-opacity="0.05"/>
+      <text x="540" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">Store</text>
+
+      <line x1="612" y1="445" x2="640" y2="445" stroke="#06b6d4" stroke-width="1.6" marker-end="url(#loxmq-architecture-arrow-accent)"/>
+      <text x="648" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">Encrypted WS</text>
+
+      <line x1="760" y1="445" x2="788" y2="445" stroke="#3b82f6" stroke-width="1.2" marker-end="url(#loxmq-architecture-arrow-link)"/>
+      <text x="796" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">MQTT / HTTP</text>
+
+      <line x1="906" y1="445" x2="934" y2="445" stroke="#5a6472" stroke-width="1.2" marker-end="url(#loxmq-architecture-arrow)"/>
+      <text x="942" y="448" fill="#5a6472" font-size="8.5" font-family="'Geist', sans-serif">Internal</text>
+    </svg>
