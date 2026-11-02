@@ -76,7 +76,7 @@ jobs:
 
       # fast-jar layout under target/quarkus-app/ — COPYed by docker/Dockerfile.jvm.
       - name: Build fast-jar
-        run: mvn -B -ntp package -DskipTests
+        run: ./mvnw -B -ntp package -DskipTests
 
       # Hand the fast-jar to the github-release job (tag builds only).
       - name: Package fast-jar zip for the GitHub Release
@@ -145,7 +145,7 @@ jobs:
       # Native runner via the Mandrel builder container — no local GraalVM needed.
       # Produces target/<artifactId>-<version>-runner, COPYed by docker/Dockerfile.debian.
       - name: Build native runner
-        run: mvn -B -ntp package -Pnative -DskipTests -Dquarkus.native.container-build=true
+        run: ./mvnw -B -ntp package -Pnative -DskipTests -Dquarkus.native.container-build=true
 
       # Hand the binary to the github-release job (tag builds only). CI target/
       # is always fresh, so the glob matches exactly one runner.

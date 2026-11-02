@@ -32,8 +32,25 @@ jobs:
 
       # Integration tests (-Pintegration) are NOT run in CI: they exercise the
       # live Loxone Miniserver + MQTT broker, which live on a private LAN and
-      # are unreachable from GitHub-hosted runners. `mvn verify` keeps the unit
+      # are unreachable from GitHub-hosted runners. `./mvnw verify` keeps the unit
       # tests + quality gates (spotless, enforcer) and skips ITs (skipITs=true
-      # by default in the pom). Run ITs locally with `mvn verify -Pintegration`.
+      # by default in the pom). Run ITs locally with `./mvnw verify -Pintegration`.
+      #
+      # Uses the Maven wrapper (./mvnw, pinned to the version in
+      # .mvn/wrapper/maven-wrapper.properties) rather than the runner's system
+      # `mvn`, so the build is deterministic and the enforcer requireMavenVersion
+      # rule always sees the intended Maven. Retried once to ride out
+      # environmental flakes (Testcontainers/Ryuk startup, transient network) —
+      # a genuine failure still fails both attempts and turns the job red.
       - name: Build + unit tests
-        run: mvn -B -ntp verify
+        run: |
+          for attempt in 1 2; do
+            echo "::group::mvnw verify (attempt $attempt)"
+            if ./mvnw -B -ntp verify; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "::warning::mvnw verify failed on attempt $attempt"
+          done
+          exit 1

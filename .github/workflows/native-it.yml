@@ -35,4 +35,4 @@ jobs:
           cache: maven
 
       - name: Native build + IT against the native binary
-        run: mvn -B -ntp verify -Pnative,integration
+        run: ./mvnw -B -ntp verify -Pnative,integration
