@@ -35,6 +35,10 @@ public class LogsPageResource
         public static native TemplateInstance logs();
     }
 
+    /**
+     * {@code GET /logs} — renders the Logs page HTML shell. No template
+     * parameters; log files are fetched client-side via REST.
+     */
     @GET
     public TemplateInstance get()
     {

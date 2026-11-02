@@ -66,6 +66,11 @@ public class SchedulesPageResource
         public static native TemplateInstance schedules( String opModesJson );
     }
 
+    /**
+     * {@code GET /schedules} — renders the Schedules page HTML. Serialises the
+     * LoxAPP3 {@code operatingModes} map to JSON (empty-map fallback on
+     * failure) and passes it to the Qute template for the mode picker.
+     */
     @GET
     public TemplateInstance get()
     {

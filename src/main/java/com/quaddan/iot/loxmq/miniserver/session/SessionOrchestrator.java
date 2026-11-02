@@ -8,13 +8,8 @@ package com.quaddan.iot.loxmq.miniserver.session;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.quaddan.iot.loxmq.miniserver.state.MiniserverState;
 import com.quaddan.iot.loxmq.config.LoxoneConfig;
-import com.quaddan.iot.loxmq.miniserver.command.MiniserverApiConnectorSetCommand;
-import com.quaddan.iot.loxmq.miniserver.command.MiniserverApiConnectorSetCommandEvent;
-import com.quaddan.iot.loxmq.miniserver.command.MiniserverCommand;
-import com.quaddan.iot.loxmq.miniserver.command.MiniserverCommandEvent;
-import com.quaddan.iot.loxmq.miniserver.command.MiniserverCommandResponseEvent;
+import com.quaddan.iot.loxmq.miniserver.command.*;
 import com.quaddan.iot.loxmq.miniserver.connection.Endpoint;
 import com.quaddan.iot.loxmq.miniserver.connection.EndpointResolver;
 import com.quaddan.iot.loxmq.miniserver.crypto.KeyAndSalt;
@@ -22,10 +17,15 @@ import com.quaddan.iot.loxmq.miniserver.crypto.LoxoneCryptoService;
 import com.quaddan.iot.loxmq.miniserver.http.LoxoneJsonParser;
 import com.quaddan.iot.loxmq.miniserver.http.MiniserverHttpClient;
 import com.quaddan.iot.loxmq.miniserver.message.BinaryStatesDecoder;
+import com.quaddan.iot.loxmq.miniserver.message.MiniserverOutOfServiceEvent;
+import com.quaddan.iot.loxmq.miniserver.state.MiniserverState;
+import com.quaddan.iot.loxmq.transport.MqttMetrics;
+import io.quarkus.runtime.Shutdown;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import org.jboss.logging.Logger;
 
@@ -33,7 +33,10 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Base64;
 import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -80,39 +83,58 @@ public class SessionOrchestrator
 {
     private static final Logger LOG = Logger.getLogger( SessionOrchestrator.class );
 
+    /** Dedicated audit logger for inbound-command DISPATCH outcomes
+     *  (SENT / SEND-FAILED / DROP-NOT-RUNNING / DROP-QUEUE-FULL), routed to
+     *  the same {@code commands} file handler that {@code CommandSubscriber}
+     *  uses for the receive-side QUEUED verdict. Correlate the two by the
+     *  command identity. */
+    private static final Logger COMMANDS_LOG = Logger.getLogger( "commands" );
+
     @Inject
-    LoxoneConfig          config;
+    LoxoneConfig                            config;
     @Inject
-    EndpointResolver      endpointResolver;
+    EndpointResolver                        endpointResolver;
     @Inject
-    LoxoneCryptoService   crypto;
+    LoxoneCryptoService                     crypto;
     @Inject
-    MiniserverHttpClient  http;
+    MiniserverHttpClient                    http;
     @Inject
-    LoxoneJsonParser      parser;
+    LoxoneJsonParser                        parser;
     @Inject
-    MiniserverWebSocket   webSocket;
+    MiniserverWebSocket                     webSocket;
     @Inject
-    SessionTracker        tracker;
+    SessionTracker                          tracker;
     @Inject
-    ObjectMapper          jsonMapper;
+    ObjectMapper                            jsonMapper;
     @Inject
-    LoxApp3Cache          loxApp3Cache;
+    LoxApp3Cache                            loxApp3Cache;
     @Inject
-    ReconnectScheduler    reconnectScheduler;
+    ReconnectScheduler                      reconnectScheduler;
     @Inject
-    TokenRefreshScheduler tokenRefreshScheduler;
+    TokenRefreshScheduler                   tokenRefreshScheduler;
     @Inject
-    BinaryStatesDecoder   binaryDecoder;
+    BinaryStatesDecoder                     binaryDecoder;
     @Inject
-    MiniserverState miniserverState;
+    MiniserverState                         miniserverState;
     @Inject
     Event< MiniserverCommandResponseEvent > commandResponseEvent;
     @Inject
     Event< MiniserverConnectedEvent >       miniserverConnectedEvent;
 
+    /** Lazy lookup (cycle-safe, same rationale as KeepAliveScheduler) — used
+     *  only to count {@code queue_full} drops of inbound commands. */
+    @Inject
+    Instance< MqttMetrics >                 metricsInstance;
+
     /** Completion signal for the in-flight handshake — completes on RUNNING. */
     private volatile CompletableFuture< MiniserverToken > inFlight;
+
+    /** Single dedicated worker (bounded queue) that drains inbound MQTT
+     *  commands to the Miniserver, so the broker's network event loop is
+     *  never blocked by the synchronous WS send. See {@link #dispatchInbound}.
+     *  Initialised in {@link #prewarmInjectedBeans()}, torn down in
+     *  {@link #shutdownInboundExecutor()}. */
+    private ThreadPoolExecutor inboundCommandExecutor;
 
     /**
      * Holds the LoxAPP3.json content during the post-token steps (between
@@ -156,6 +178,31 @@ public class SessionOrchestrator
         tokenRefreshScheduler.isRefreshPending();
         binaryDecoder.toString();           // forces ArC to materialise the BinaryStatesDecoder delegate
         LOG.debug( "SessionOrchestrator pre-warmed downstream beans (LoxApp3Cache, ReconnectScheduler, TokenRefreshScheduler, BinaryStatesDecoder)" );
+
+        // Bounded single-thread executor for inbound command dispatch — keeps
+        // the synchronous (up-to-5s) WS send off the broker's network event
+        // loop and preserves FIFO command order. Overflow → AbortPolicy
+        // (default) → RejectedExecutionException, caught in dispatchInbound().
+        int cap = Math.max( 1, config.transport().security().inboundQueueCapacity() );
+        inboundCommandExecutor = new ThreadPoolExecutor(
+                1, 1, 0L, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>( cap ),
+                r ->
+                {
+                    Thread t = new Thread( r, "loxone-inbound-cmd" );
+                    t.setDaemon( true );
+                    return t;
+                } );
+        LOG.infof( "Inbound command dispatcher armed — single worker, bounded queue capacity=%d", ( Integer ) cap );
+    }
+
+    @Shutdown
+    void shutdownInboundExecutor()
+    {
+        if ( inboundCommandExecutor != null )
+        {
+            inboundCommandExecutor.shutdownNow();
+        }
     }
 
     // ==========================================================================
@@ -270,6 +317,78 @@ public class SessionOrchestrator
         {
             inFlight.completeExceptionally( new SessionException( "Disconnected: " + reason ) );
         }
+    }
+
+    /**
+     * Invoked by the keepalive watchdog ({@link KeepAliveScheduler}) when the
+     * Miniserver link is judged dead even though the WebSocket layer never
+     * reported {@code onClose}/{@code onError} — the classic half-open TCP
+     * case after a Miniserver reboot that left no RST, or a keepalive send
+     * that failed outright.
+     *
+     * <p>Tears the session down and schedules a reconnect (NORMAL backoff —
+     * no close code is available). No-op unless the session is currently
+     * {@link SessionState#RUNNING}: an operator close
+     * ({@link SessionState#CLOSED}) or an in-flight reconnect already owns the
+     * lifecycle, and the scheduler's single-in-flight guard would collapse a
+     * double trigger anyway.
+     */
+    public void onConnectionDead( String reason )
+    {
+        if ( tracker.state() != SessionState.RUNNING )
+        {
+            return;
+        }
+        LOG.warnf( "Miniserver link declared dead (%s) — tearing down and scheduling reconnect", reason );
+        webSocket.close( "link dead: " + reason );
+        tokenRefreshScheduler.cancel();
+        tracker.transition( SessionState.DISCONNECTED );
+        reconnectScheduler.scheduleReconnect( this::doReconnect,
+                                              effectivePolicy( LoxoneCloseCode.ReconnectPolicy.NORMAL ) );
+    }
+
+    // ==========================================================================
+    //  Out-of-service (Miniserver reboot / firmware update) reconnect cadence
+    // ==========================================================================
+
+    /**
+     * Latched when the Miniserver fires its documented OUT_OF_SERVICE binary
+     * indicator (Loxone "identifier 5"). While set, every reconnect attempt
+     * uses the fixed {@link LoxoneCloseCode.ReconnectPolicy#OUT_OF_SERVICE}
+     * cadence (initial delay + retry interval) instead of exponential
+     * backoff — the retries during a reboot fail with generic transport
+     * errors (connection refused), not a 4009 close, so the close-code policy
+     * alone wouldn't carry the whole sequence. Cleared on the next RUNNING.
+     */
+    private volatile boolean outOfServiceLatch = false;
+
+    /**
+     * Arm the OUT_OF_SERVICE reconnect cadence. Observes the Miniserver's
+     * documented out-of-service indicator (the same event
+     * {@code OutOfServiceMqttReconnector} uses for the MQTT side). Synchronous
+     * so the latch is set before the WS close for the same event is handled.
+     */
+    void onOutOfService( @Observes MiniserverOutOfServiceEvent event )
+    {
+        LOG.info( "Miniserver OUT_OF_SERVICE signaled — next reconnects use the fixed OOS cadence "
+                  + "(initial delay + retry interval) until the session is back" );
+        outOfServiceLatch = true;
+    }
+
+    /**
+     * The effective reconnect policy: upgrades {@code base} to
+     * {@link LoxoneCloseCode.ReconnectPolicy#OUT_OF_SERVICE} while an
+     * out-of-service is pending (unless {@code base} is
+     * {@link LoxoneCloseCode.ReconnectPolicy#DO_NOT_RECONNECT}, which must
+     * always win — e.g. a disabled user).
+     */
+    private LoxoneCloseCode.ReconnectPolicy effectivePolicy( LoxoneCloseCode.ReconnectPolicy base )
+    {
+        if ( outOfServiceLatch && base != LoxoneCloseCode.ReconnectPolicy.DO_NOT_RECONNECT )
+        {
+            return LoxoneCloseCode.ReconnectPolicy.OUT_OF_SERVICE;
+        }
+        return base;
     }
 
     // ==========================================================================
@@ -483,7 +602,8 @@ public class SessionOrchestrator
             // the policy allows it. The scheduler itself logs the chosen delay.
             if ( !operatorInitiated )
             {
-                reconnectScheduler.scheduleReconnect( SessionOrchestrator.this::doReconnect, lcc.policy() );
+                reconnectScheduler.scheduleReconnect( SessionOrchestrator.this::doReconnect,
+                                                      effectivePolicy( lcc.policy() ) );
             }
         }
 
@@ -495,7 +615,45 @@ public class SessionOrchestrator
                 LOG.debugf( "onError on stale listener — ignored: %s", error.getMessage() );
                 return;
             }
-            failHandshake( "WS error: " + error.getMessage(), error );
+
+            // Capture state BEFORE the transitions below.
+            boolean operatorInitiated = tracker.state() == SessionState.CLOSED;
+            boolean established       = tracker.state() == SessionState.RUNNING;
+
+            if ( established )
+            {
+                // Transport error on a LIVE session — typically a TCP reset /
+                // broken pipe when the Miniserver reboots or the network
+                // drops. The JDK WebSocket delivers these as onError, never a
+                // clean onClose frame, so (unlike the onClose path) THIS path
+                // must drive the reconnect itself — otherwise the binding
+                // stays offline until a manual reconnect.
+                LOG.errorf( error, "WS transport error on RUNNING session: %s", error.getMessage() );
+                webSocket.close( "ws transport error" );
+                tracker.transition( SessionState.DISCONNECTED );
+            }
+            else
+            {
+                // Error during the handshake → fail the in-flight attempt.
+                failHandshake( "WS error: " + error.getMessage(), error );
+            }
+
+            // Session is gone — drop the token-refresh timer; the next
+            // successful handshake reschedules it from RUNNING.
+            tokenRefreshScheduler.cancel();
+
+            // Reconnect unless the operator asked us to stay down. No close
+            // frame was received → no LoxoneCloseCode → NORMAL exponential
+            // backoff by default (same rationale as the connect()-failure path
+            // in failNow()). effectivePolicy() upgrades this to the fixed OOS
+            // cadence when a Miniserver OUT_OF_SERVICE is pending — the reboot
+            // retries fail here (connection refused), not via a 4009 close.
+            if ( !operatorInitiated )
+            {
+                reconnectScheduler.scheduleReconnect(
+                        SessionOrchestrator.this::doReconnect,
+                        effectivePolicy( LoxoneCloseCode.ReconnectPolicy.NORMAL ) );
+            }
         }
     }
 
@@ -724,6 +882,10 @@ public class SessionOrchestrator
         miniserverConnectedEvent.fireAsync(
                 new MiniserverConnectedEvent( java.time.Instant.now(),
                                               miniserverState.identity() ) );
+
+        // Session is back — clear any pending OUT_OF_SERVICE latch so the
+        // next unrelated disconnect uses the normal policy again.
+        outOfServiceLatch = false;
 
         // Reset the reconnect backoff — next disconnect starts fresh from
         // initialDelay rather than the cumulative ladder from whatever
@@ -995,7 +1157,7 @@ public class SessionOrchestrator
         {
             reconnectScheduler.scheduleReconnect(
                     this::doReconnect,
-                    LoxoneCloseCode.ReconnectPolicy.NORMAL );
+                    effectivePolicy( LoxoneCloseCode.ReconnectPolicy.NORMAL ) );
         }
         return inFlight;
     }
@@ -1041,14 +1203,9 @@ public class SessionOrchestrator
             LOG.warn( "Received null/incomplete MiniserverCommand — dropped" );
             return;
         }
-        if ( tracker.state() != SessionState.RUNNING )
-        {
-            LOG.warnf( "Dropping command %s/%s — session is %s (not RUNNING)",
-                       cmd.uuid(), cmd.command(), tracker.state() );
-            return;
-        }
-        String plain = config.miniserver().cmd().prefix().root() + cmd.uuid() + "/" + cmd.command();
-        sendEncryptedCommand( "command", plain );
+        String plain   = config.miniserver().cmd().prefix().root() + cmd.uuid() + "/" + cmd.command();
+        String auditId = cmd.uuid() + "/" + cmd.command();
+        dispatchInbound( "command", auditId, plain );
     }
 
     /**
@@ -1067,22 +1224,55 @@ public class SessionOrchestrator
             LOG.warn( "Received null/incomplete MiniserverApiConnectorSetCommand — dropped" );
             return;
         }
-        if ( tracker.state() != SessionState.RUNNING )
+        String set     = "/SET(" + c.functionBlock() + ";" + c.input() + ";" + c.value() + ")";
+        String plain   = config.miniserver().cmd().prefix().root() + c.virtualInputText() + set;
+        String auditId = c.virtualInputText() + set;
+        dispatchInbound( "api-set", auditId, plain );
+    }
+
+    /**
+     * Hand an inbound MQTT command to the single dedicated worker for
+     * encryption + WS send. The enqueue is non-blocking (O(1)) so the caller
+     * — the HiveMQ broker network event loop — is freed immediately; the
+     * worker runs the synchronous (up-to-5s) WS send off that loop, preserving
+     * FIFO order.
+     *
+     * <p>Overflow (queue full) is dropped in a controlled, observable way
+     * ({@code DROP-QUEUE-FULL} audit + {@code queue_full} drop metric) rather
+     * than blocking the broker connection or growing memory without bound. The
+     * {@link SessionState#RUNNING} check is deferred to the worker so the audit
+     * reflects the session state at actual send time.
+     */
+    private void dispatchInbound( String label, String auditId, String plain )
+    {
+        try
         {
-            LOG.warnf( "Dropping API SET %s — session is %s (not RUNNING)",
-                       c.virtualInputText(), tracker.state() );
-            return;
+            inboundCommandExecutor.execute( () ->
+            {
+                if ( tracker.state() != SessionState.RUNNING )
+                {
+                    LOG.warnf( "Dropping %s %s — session is %s (not RUNNING)", label, auditId, tracker.state() );
+                    COMMANDS_LOG.infof( "%s|DROP-NOT-RUNNING|%s", label, auditId );
+                    return;
+                }
+                boolean ok = sendEncryptedCommand( label, plain );
+                COMMANDS_LOG.infof( "%s|%s|%s", label, ok ? "SENT" : "SEND-FAILED", auditId );
+            } );
         }
-        String plain = config.miniserver().cmd().prefix().root()
-                       + c.virtualInputText()
-                       + "/SET(" + c.functionBlock() + ";" + c.input() + ";" + c.value() + ")";
-        sendEncryptedCommand( "api-set", plain );
+        catch ( RejectedExecutionException full )
+        {
+            LOG.warnf( "Inbound command queue FULL (capacity=%d) — dropping %s %s. A sustained flood or a "
+                       + "stalled Miniserver link is backing commands up.",
+                       ( Integer ) config.transport().security().inboundQueueCapacity(), label, auditId );
+            COMMANDS_LOG.infof( "%s|DROP-QUEUE-FULL|%s", label, auditId );
+            metricsInstance.get().recordDrop( MqttMetrics.REASON_QUEUE_FULL );
+        }
     }
 
     /** Common encrypt + send. Logs the plain command at DEBUG (operator
-     *  audit) but only the ciphertext-length at INFO (no secret leakage
-     *  in production logs). */
-    private void sendEncryptedCommand( String label, String plain )
+     *  audit) and only at WARN on failure (no secret leakage at INFO).
+     *  Returns {@code true} iff the encrypted frame was handed to the socket. */
+    private boolean sendEncryptedCommand( String label, String plain )
     {
         try
         {
@@ -1091,14 +1281,16 @@ public class SessionOrchestrator
             {
                 LOG.warnf( "Could not encrypt %s command (encryptCommand returned null) — dropped: %s",
                            label, plain );
-                return;
+                return false;
             }
             LOG.debugf( "→ encrypted %s: %s", label, plain );
             webSocket.sendText( encrypted );
+            return true;
         }
         catch ( RuntimeException e )
         {
             LOG.warnf( e, "Could not send %s command: %s", label, plain );
+            return false;
         }
     }
 
@@ -1116,5 +1308,43 @@ public class SessionOrchestrator
     public void sendEncryptedAdminCommand( String plainCommand )
     {
         sendEncryptedCommand( "admin", plainCommand );
+    }
+
+    /** Outcome of a synchronous {@link #sendCommand} from the REST / Commands-page path. */
+    public enum SendResult
+    {
+        SENT, NOT_RUNNING, SEND_FAILED
+    }
+
+    /**
+     * Synchronous command send for the REST / Commands-page path: builds
+     * {@code {cmd.prefix.root}{uuid}/{command}}, encrypts it and sends it over
+     * the active WebSocket, returning the outcome so the UI gets immediate
+     * feedback.
+     *
+     * <p>Unlike the MQTT ingress — queued on a dedicated worker to protect the
+     * broker event loop (see {@link #dispatchInbound}) — this runs on the
+     * caller's REST worker thread (a human in the LAN, low volume), so a
+     * synchronous blocking send is fine and desirable. Audited to the
+     * {@code commands} log as {@code rest|SENT|…} / {@code SEND-FAILED} /
+     * {@code DROP-NOT-RUNNING}.
+     */
+    public SendResult sendCommand( String uuid, String command )
+    {
+        if ( uuid == null || uuid.isBlank() || command == null || command.isBlank() )
+        {
+            return SendResult.SEND_FAILED;
+        }
+        String auditId = uuid + "/" + command;
+        if ( tracker.state() != SessionState.RUNNING )
+        {
+            LOG.warnf( "Dropping REST command %s — session is %s (not RUNNING)", auditId, tracker.state() );
+            COMMANDS_LOG.infof( "rest|DROP-NOT-RUNNING|%s", auditId );
+            return SendResult.NOT_RUNNING;
+        }
+        String  plain = config.miniserver().cmd().prefix().root() + uuid + "/" + command;
+        boolean ok    = sendEncryptedCommand( "rest", plain );
+        COMMANDS_LOG.infof( "rest|%s|%s", ok ? "SENT" : "SEND-FAILED", auditId );
+        return ok ? SendResult.SENT : SendResult.SEND_FAILED;
     }
 }

@@ -88,12 +88,28 @@ public class FirmwareUpdateService
     /** Session reached RUNNING → compare against the latest published firmware once. */
     void onMiniserverConnected( @ObservesAsync MiniserverConnectedEvent event )
     {
+        runCheck();
+    }
+
+    /**
+     * Check now against Loxone's latest published firmware (fetch
+     * {@code updatecheck.xml}), store the result and return it. Returns
+     * {@link Optional#empty()} if there is no Miniserver identity yet, the
+     * channel's {@code LatestRelease} couldn't be read, or the fetch failed —
+     * the last-known {@link #status()} is kept in that case.
+     *
+     * <p>Invoked both by the {@link MiniserverConnectedEvent} observer (once per
+     * RUNNING) and on demand by {@code POST /api/v1/firmware/check} — the
+     * operator can re-run it any time without restarting LoxMQ.
+     */
+    public Optional< Status > runCheck()
+    {
         try
         {
             Optional< MiniserverIdentity > idOpt = miniserverState.identity();
             if ( idOpt.isEmpty() )
             {
-                return;   // no identity yet — nothing to compare against
+                return Optional.empty();   // no identity yet — nothing to compare against
             }
             MiniserverIdentity id        = idOpt.get();
             MiniserverVersion  installed = id.version();
@@ -103,20 +119,24 @@ public class FirmwareUpdateService
             if ( latestOpt.isEmpty() )
             {
                 LOG.warnf( "Could not read LatestRelease for channel '%s' from updatecheck.xml", channel );
-                return;
+                return Optional.empty();
             }
             MiniserverVersion latest   = latestOpt.get();
             boolean           upToDate = installed.compareTo( latest ) >= 0;
-            statusRef.set( new Status( latest, upToDate, Instant.now() ) );
+            Status            status   = new Status( latest, upToDate, Instant.now() );
+            statusRef.set( status );
             LOG.infof( "Firmware check (%s): installed=%s latest=%s → %s",
                        channel, installed, latest, upToDate ? "up to date" : "UPDATE AVAILABLE" );
+            return Optional.of( status );
         }
         catch ( Exception e )
         {
             // Best-effort, must NEVER escape to the async-observer exception
-            // handler. Keep the last-known status; the next connect retries.
+            // handler. Keep the last-known status; the next connect (or on-demand
+            // run) retries.
             LOG.warnf( "Firmware update check failed — %s",
                        e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName() );
+            return Optional.empty();
         }
     }
 

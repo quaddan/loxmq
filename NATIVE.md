@@ -19,12 +19,12 @@ see the project's git history.
 ./mvnw package -Pnative -Dquarkus.profile=dev \
             -Dquarkus.native.container-build=true -DskipTests
 
-# The binary is in target/loxmq-1.1.0-runner (~88 MB)
+# The binary is in target/loxmq-1.2.0-runner (~88 MB)
 # Launch directly (no JVM needed):
-./target/loxmq-1.1.0-runner
+./target/loxmq-1.2.0-runner
 
 # With env override (e.g. disable auto-start for smoke test):
-./target/loxmq-1.1.0-runner -Dloxone.boot.auto-start=false
+./target/loxmq-1.2.0-runner -Dloxone.boot.auto-start=false
 ```
 
 Notes:
@@ -66,8 +66,22 @@ ObjectMapper.convertValue(...)   // n/a currently
 
 ```
 ObjectMapper.writeValueAsBytes(...)   // StatesPublisher (BATCH path), AppInfo, OOS
-ObjectMapper.writeValueAsString(...)  // n/a currently
+ObjectMapper.writeValueAsString(...)  // LiveStatesResource (Topology, inline in /states)
+                                      // CommandsPageResource (CommandSurface.topology
+                                      //   + controlStates, inline in /commands)
 ```
+
+Registered this release (v1.2.0): `LoxApp3MetadataResolver.StateRef` — the
+values of `CommandSurface.controlStates` serialized inline on `/commands`
+(alongside the already-registered `Topology` / `ControlInfo`). Exercised by the
+native IT `CommandsPageIT`.
+
+> **Typed JAX-RS returns are auto-registered** — a resource method whose return
+> type is a DTO / `Map<String, Dto>` (e.g. `GET /api/v1/state/current` →
+> `Map<String, LiveStateSnapshot.StateValue>`, or the `POST` request-body records
+> like `CommandRequest` / `InboundRequest`) is wired by RESTEasy Reactive and
+> needs **no** `NativeReflectionConfig` entry. Only **manual** `ObjectMapper`
+> serialization (like the inline topology above) does.
 
 **Rule**: any new class (record or bean) read or written by
 these calls must be added to
@@ -338,6 +352,18 @@ pkill -f 'loxmq-.*-runner'
 # 4. If steps 2-3 OK → commit + push + tag
 ```
 
+To go beyond "it boots" and actually **run the ITs against the native
+binary** (the only thing that catches a missing `NativeReflectionConfig`
+entry), see `TESTS.md §3.5`. Key gotcha: bare `./mvnw verify -Pnative,integration`
+**skips the ITs** — the `native` profile (declared after `integration` in
+`pom.xml`) wins and sets `skipITs=true`. You must add `-DskipITs=false`:
+
+```bash
+./mvnw verify -Pnative,integration -DskipITs=false \
+            -Dquarkus.native.reuse-existing=true \
+            -Dit.test=CommandsPageIT,LiveStatesPageIT
+```
+
 "Safe" patches (docs, comments, purely-JVM refactors,
 test additions) can skip steps 2-3. **When in doubt:
 rebuild native.**
@@ -349,9 +375,10 @@ rebuild native.**
 | File                                                               | Role                                                         |
 |--------------------------------------------------------------------|--------------------------------------------------------------|
 | `pom.xml` § profile `native`                                       | Enables `quarkus.native.enabled=true`                        |
-| `pom.xml` § dep `quarkus-hivemq-client:2.5.0`                      | Quarkiverse extension that ships HiveMQ/Netty native hints   |
-| `pom.xml` § dep `org.graalvm.nativeimage:svm:25.0.3` (provided)    | `@TargetClass`, `@Alias`, `@RecomputeFieldValue` annotations |
+| `pom.xml` § dep `quarkus-hivemq-client:2.6.0`                      | Quarkiverse extension that ships HiveMQ/Netty native hints   |
+| `pom.xml` § dep `org.graalvm.nativeimage:svm:25.0.5` (provided)    | `@TargetClass`, `@Alias`, `@RecomputeFieldValue` annotations |
 | `src/main/resources/application.yaml` § `quarkus.arc.exclude-types` | CDI beans to skip (HiveMQMqttConnector)                      |
+| `src/main/resources/application.yaml` § `quarkus.native.resources.includes` | Embeds `system-commands.json` so `SystemCommandRegistry` can read its allow-list from the native binary (`getResourceAsStream`) |
 | `src/main/java/.../util/NativeReflectionConfig.java`               | Central list of classes registered for reflection            |
 | `src/main/java/.../util/graal/Target_JCTools.java`                 | GraalVM substitutions for JCTools standalone                 |
 

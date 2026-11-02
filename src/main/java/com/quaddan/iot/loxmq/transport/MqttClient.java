@@ -5,6 +5,9 @@
 
 package com.quaddan.iot.loxmq.transport;
 
+import java.time.Instant;
+import java.util.Optional;
+
 /**
  * Test seam over the MQTT client layer. Production uses
  * {@link HiveMqClient} (HiveMQ MQTT v5 over Netty); tests swap in a
@@ -43,6 +46,11 @@ public interface MqttClient
     /** True between a successful {@link #connect()} and the next
      *  {@link #disconnect()} or broker-side close. */
     boolean isConnected();
+
+    /** Instant the connection state last changed (connect OR disconnect), or
+     *  empty before the first transition. Surfaced as the dashboard's MQTT
+     *  "depuis" timestamp (mirrors the Miniserver session's state-change time). */
+    Optional< Instant > stateChangedAt();
 
     /**
      * Fire-and-forget publish. The HiveMQ async client buffers and

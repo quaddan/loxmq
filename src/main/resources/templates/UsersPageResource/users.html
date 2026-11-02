@@ -6,7 +6,7 @@
     <title>loxmq — Users</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- i18n FR/EN/DE (loaded sync). -->
-    <script src="/js/i18n.js"></script>
+    <script src="/js/i18n.js?v={cacheBust}"></script>
     <style>
         :root {
             --bg: #0e1116;
@@ -91,6 +91,10 @@
         }
         table tr:hover { background: var(--bg-panel-hover); }
         table td.actions { white-space: nowrap; text-align: right; }
+        /* Horizontal breathing room between the inline action buttons
+           (View/Edit · Disable · Delete ; Edit · Delete), which otherwise sit
+           flush against each other. */
+        table td.actions button + button { margin-left: 0.5rem; }
         .badge {
             display: inline-block; padding: 0.1rem 0.5rem; border-radius: 3px;
             font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em;
@@ -117,7 +121,6 @@
             border: 1px solid var(--border); border-radius: 4px;
             padding: 0.4rem 0.8rem; font-size: 0.8rem; cursor: pointer;
         }
-        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
         button:disabled {
             opacity: 0.4; cursor: not-allowed;
             background: var(--bg-panel-hover) !important;
@@ -153,13 +156,11 @@
             color: #fff !important;
             border-color: #b62324 !important;
         }
-        .btn-danger:hover { background: #cf2e2e !important; }
         .btn-primary {
             background: var(--accent) !important;
             color: #000 !important;
             border-color: var(--accent) !important;
         }
-        .btn-primary:hover { background: #79b8ff !important; }
         /* Disable is a reversible state change (the user can be re-enabled
            via the Edit form), whereas Delete is destructive and
            irreversible. Sharing btn-danger for both confused the eye :
@@ -174,7 +175,11 @@
             color: #000 !important;
             border-color: var(--fg-dim) !important;
         }
-        .btn-muted:hover { background: #a8b1bb !important; }
+        /* Add / create → green (constructive), mirroring the connect green. */
+        .btn-success {
+            background: var(--accent-up) !important; color: #000 !important;
+            border-color: var(--accent-up) !important;
+        }
         /* Button palette :
               .btn-primary  (blue   --accent)       — primary creates (+ New user / + New group)
               (default)                             — neutral : View / Edit
@@ -269,7 +274,6 @@
             color: var(--accent);
             border-bottom-color: var(--accent);
         }
-        .modal-tabs button:hover { color: var(--fg); background: transparent; }
         .modal-tab-panel { display: none; }
         .modal-tab-panel.active { display: block; }
         footer {
@@ -281,6 +285,8 @@
     <!-- Shared responsive overrides — must load AFTER the inline <style> above
          so its mobile rules win by source order. See css/mobile.css. -->
     <link rel="stylesheet" href="/css/mobile.css?v=8">
+    <!-- Shared button hover/focus/press feedback — loaded last so it wins. -->
+    <link rel="stylesheet" href="/css/button-fx.css?v=1">
 </head>
 <body>
     <header>
@@ -291,9 +297,11 @@
         <nav class="tabs">
             <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
             <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/commands"  data-i18n="nav.commands">Commands</a>
             <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
             <a href="/users"     data-i18n="nav.users" class="active">Users</a>
             <a href="/logs"      data-i18n="nav.logs">Logs</a>
+            <a href="/system"    data-i18n="nav.system">System</a>
         </nav>
         <!-- Language combobox. -->
         <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
@@ -314,8 +322,8 @@
                            title="Auto-refresh every 30s (paused while a modal is open)">
                         <input type="checkbox" id="auto-refresh-toggle" checked> <span data-i18n="common.auto30s">auto 30s</span>
                     </label>
-                    <button id="refresh-now" type="button" data-i18n="users.refresh.btn" data-i18n-attr="title:users.refresh.now" title="Refresh now">↻ Refresh</button>
-                    <button id="open-create" type="button" class="btn-primary">+ <span data-i18n="users.add.user">New user</span></button>
+                    <button id="refresh-now" type="button" class="btn-primary" style="margin-left:1rem;" data-i18n="users.refresh.btn" data-i18n-attr="title:users.refresh.now" title="Refresh now">↻ Refresh</button>
+                    <button id="open-create" type="button" class="btn-success" style="margin-left:2rem;">+ <span data-i18n="users.add.user">New user</span></button>
                 </div>
             </div>
             <div class="table-scroll">
@@ -338,7 +346,7 @@
         <section class="panel">
             <div class="panel-toolbar">
                 <h2 style="margin: 0; border: 0; padding: 0;"><span data-i18n="users.tab.groups">Groups</span> (<span id="groups-count">…</span>)</h2>
-                <button id="open-create-group" type="button" class="btn-primary">+ <span data-i18n="users.add.group">New group</span></button>
+                <button id="open-create-group" type="button" class="btn-success">+ <span data-i18n="users.add.group">New group</span></button>
             </div>
             <div class="table-scroll">
             <table id="groups-table">
@@ -448,7 +456,7 @@
                 </div>
                 <div class="modal-footer" style="margin-top: 0.5rem; padding-top: 0.5rem;">
                     <button type="button" id="nfc-discover" data-i18n="users.btn.discover">Discover (tap a tag)</button>
-                    <button type="button" id="nfc-add" class="btn-primary" data-i18n="users.btn.addTag">Add tag</button>
+                    <button type="button" id="nfc-add" class="btn-success" data-i18n="users.btn.addTag">Add tag</button>
                 </div>
             </div>
 
@@ -1191,7 +1199,7 @@
                         '<td class="validity-cell" data-uuid="' + escapeHtml(u.uuid) + '">' +
                             initialValidityCell(u) + '</td>' +
                         '<td class="actions">' +
-                        '  <button data-action="view" data-uuid="' + escapeHtml(u.uuid) + '" data-name="' + escapeHtml(u.name) + '">' + t('users.btn.viewEdit') + '</button>' +
+                        '  <button class="btn-primary" data-action="view" data-uuid="' + escapeHtml(u.uuid) + '" data-name="' + escapeHtml(u.name) + '">' + t('users.btn.viewEdit') + '</button>' +
                         '  ' + disableBtn +
                         '  ' + deleteBtn +
                         '</td>';
@@ -1233,7 +1241,7 @@
                             '<div class="user-chips"></div>' +
                         '</td>' +
                         '<td class="actions">' +
-                        '  <button data-action="edit-group" data-uuid="' + escapeHtml(g.uuid) +
+                        '  <button class="btn-primary" data-action="edit-group" data-uuid="' + escapeHtml(g.uuid) +
                                 '" data-name="' + escapeHtml(g.name) +
                                 '" data-desc="' + escapeHtml(g.descriptionOrEmpty) + '">' + t('users.btn.editGroup') + '</button>' +
                         '  <button class="btn-danger" data-action="delete-group" data-uuid="' +

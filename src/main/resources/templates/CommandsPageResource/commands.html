@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="commands.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>loxmq — Commands</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE. -->
+    <script src="/js/i18n.js?v={cacheBust}"></script>
+    <style>
+        :root {
+            --bg: #0e1116; --bg-panel: #161b22; --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9; --fg-dim: #8b949e; --accent: #58a6ff;
+            --accent-down: #f85149; --accent-up: #3fb950; --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+               background: var(--bg); color: var(--fg); line-height: 1.5; }
+        header { background: var(--bg-panel); border-bottom: 1px solid var(--border);
+                 padding: 1rem 2rem; display: flex; justify-content: space-between;
+                 align-items: center; gap: 1rem; flex-wrap: wrap; }
+        header h1 { margin: 0; display: flex; align-items: center; gap: 0.75rem; }
+        header h1 img.logo { height: 96px; width: auto; display: block; }
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        header nav.tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        header nav.tabs a { color: var(--fg-dim); text-decoration: none; padding: 0.4rem 1rem;
+                            border: 1px solid transparent; border-radius: 4px; font-size: 0.85rem;
+                            text-transform: uppercase; letter-spacing: 0.05em; }
+        header nav.tabs a:hover { color: var(--fg); background: var(--bg-panel-hover); }
+        header nav.tabs a.active { color: var(--accent); border-color: var(--accent); }
+        header .lang-switcher {
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: 0.55rem center; background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px; padding: 0.35rem 0.5rem 0.35rem 1.9rem;
+            font-family: inherit; font-size: 0.8rem; cursor: pointer; }
+        main { padding: 2rem; max-width: 820px; margin: 0 auto; }
+        .panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px;
+                 padding: 1.5rem; }
+        .panel h2 { margin: 0 0 1.25rem; font-size: 1.1rem; font-weight: 600; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--fg-dim); }
+        label.full { grid-column: 1 / -1; }
+        select, input[type=text], input[type=number] {
+            background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+            border-radius: 4px; padding: 0.5rem 0.6rem; font-family: inherit; font-size: 0.9rem; }
+        /* Read-only "readout" fields (Type, UUID): no input chrome — they are
+           outputs of the selection, not editable. Borderless + dim + mono. */
+        input[readonly] {
+            border: none; border-bottom: 1px dotted var(--border); border-radius: 0;
+            background: transparent; padding: 0.45rem 0; cursor: default;
+            color: var(--fg-dim); font-family: var(--mono); font-size: 0.8rem;
+        }
+        input[readonly]:focus { outline: none; }
+        /* Disabled editable fields (e.g. Value when the command takes none) read as greyed-out. */
+        select:disabled, input:disabled { opacity: 0.4; cursor: not-allowed; }
+        /* Lock marker on read-only field labels. */
+        label.ro > span::after { content: ' 🔒'; font-size: 0.72em; opacity: 0.55; }
+        label.ro { color: var(--fg-dim); }
+        /* Search/filter label gets a 🔍 marker. Manual-entry fields carry
+           their ✏️ at the START of the hint text instead (no end-of-label icon). */
+        label.search > span::after { content: ' 🔍'; font-size: 0.72em; opacity: 0.7; }
+        .btn { margin-top: 1.25rem; background: var(--accent); color: #07101d; border: none;
+               border-radius: 4px; padding: 0.6rem 1.4rem; font-size: 0.95rem; font-weight: 600;
+               cursor: pointer; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result { margin-top: 1rem; padding: 0.6rem 0.9rem; border-radius: 4px; font-size: 0.9rem;
+                  display: none; }
+        .result.ok  { display: block; background: rgba(63,185,80,0.12);  border: 1px solid var(--accent-up);  color: var(--accent-up); }
+        .result.err { display: block; background: rgba(248,81,73,0.12);  border: 1px solid var(--accent-down); color: var(--accent-down); }
+        .hint { font-size: 0.75rem; color: var(--fg-dim); margin-top: 0.2rem; }
+        /* Current-state readout — one "name  value" row per state of the
+           selected control. Live-updated from the SSE stream. */
+        .state-list { display: flex; flex-direction: column; gap: 0.2rem; padding: 0.3rem 0;
+                      font-family: var(--mono); font-size: 0.8rem; color: var(--fg); }
+        .state-list .state-row { display: flex; justify-content: space-between; gap: 1rem;
+                                 border-bottom: 1px dotted var(--border); padding-bottom: 0.15rem; }
+        .state-list .state-name { color: var(--fg-dim); }
+        .state-list .state-val  { color: var(--fg); text-align: right; word-break: break-word; }
+        .state-list .state-val.fresh { animation: flash 0.6s ease-out; }
+        @keyframes flash { from { color: var(--accent); } to { color: var(--fg); } }
+        /* "UUID not found": Room + Category show "Unknown" in red, filter tinted.
+           "input.invalid": custom command typed with an empty UUID field. */
+        select.notfound, input.notfound, input.invalid { color: var(--accent-down); border-color: var(--accent-down); }
+        .err-msg { color: var(--accent-down); font-size: 0.75rem; margin-top: 0.2rem; }
+        /* Set the free-form "Custom command" apart from the guided fields above. */
+        label.separated { border-top: 1px solid var(--border); margin-top: 1rem; padding-top: 1.25rem; }
+        /* Divider between the form and the Send button, so the action reads apart. */
+        hr.btn-sep { border: none; border-top: 1px solid var(--border); margin: 1.4rem 0 0; }
+        /* Top bar: enable/disable processing of inbound (MQTT) commands. */
+        .inbound-bar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+                       margin-bottom: 1rem; padding: 0.6rem 0.9rem; background: var(--bg-panel);
+                       border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; }
+        .inbound-label { color: var(--fg-dim); }
+        /* Inbound processing disabled → the top label turns red (warning state). */
+        .inbound-label.off { color: var(--accent-down); font-weight: 600; }
+        .inbound-toggle { margin-left: auto; padding: 0.4rem 0.95rem; border-radius: 4px; cursor: pointer;
+                          font-size: 0.8rem; font-weight: 600; border: 1px solid var(--border);
+                          background: var(--bg); color: var(--fg-dim); }
+        .inbound-toggle.on  { border-color: var(--accent-up);   color: var(--accent-up); }
+        .inbound-toggle.off { border-color: var(--accent-down); color: var(--accent-down); }
+        .inbound-toggle:disabled { opacity: 0.5; cursor: wait; }
+        /* Help toggle for the custom command: a "?" button + a collapsible box. */
+        .hdr-row { display: flex; align-items: center; gap: 0.5rem; }
+        .help-btn { flex: none; width: 1.3rem; height: 1.3rem; padding: 0; line-height: 1;
+                    border: 1px solid var(--accent); border-radius: 50%; background: transparent;
+                    color: var(--accent); font-size: 0.78rem; font-weight: 700; cursor: pointer; }
+        .help-btn[aria-expanded="true"] { background: var(--accent); color: #07101d; }
+        .help-box { white-space: pre-line; margin-top: 0.3rem; padding: 0.6rem 0.75rem;
+                    background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+                    font-size: 0.75rem; color: var(--fg-dim); line-height: 1.65; }
+    </style>
+    <!-- Shared button hover/focus/press feedback — loaded last so it wins. -->
+    <link rel="stylesheet" href="/css/button-fx.css?v=1">
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/" style="line-height:0;"><img class="logo" src="/images/loxmq-logo-compact.svg" alt=""></a>
+            <span class="vh">loxmq</span>
+        </h1>
+        <nav class="tabs">
+            <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/commands"  data-i18n="nav.commands" class="active">Commands</a>
+            <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
+            <a href="/users"     data-i18n="nav.users">Users</a>
+            <a href="/logs"      data-i18n="nav.logs">Logs</a>
+            <a href="/system"    data-i18n="nav.system">System</a>
+        </nav>
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <div class="inbound-bar">
+            <span class="inbound-label" data-i18n="commands.inbound.label">Inbound command processing (MQTT)</span>
+            <button type="button" id="inbound-toggle" class="inbound-toggle" aria-pressed="false">…</button>
+        </div>
+        <section class="panel">
+            <h2 data-i18n="commands.panelTitle">Send a command</h2>
+            <div class="grid">
+                <label><span data-i18n="commands.field.room">Room</span>
+                    <select id="sel-room"></select>
+                </label>
+                <label><span data-i18n="commands.field.category">Category</span>
+                    <select id="sel-cat"></select>
+                </label>
+                <label class="full"><span data-i18n="commands.field.control">Control</span>
+                    <select id="sel-control"></select>
+                </label>
+                <label class="full search"><span data-i18n="commands.field.uuid">UUID</span>
+                    <input type="text" id="filter-uuid" data-i18n-attr="placeholder:commands.field.uuidFilterPh"
+                           placeholder="UUID substring…" autocomplete="off">
+                    <span class="hint" data-i18n="commands.hint.uuidFilter">Type part of a UUID to find a control (filters the list — does not send anything).</span>
+                    <span class="err-msg" id="uuid-err" hidden data-i18n="commands.err.uuidRequired">A UUID is required to send a custom command.</span>
+                </label>
+                <label class="full ro"><span data-i18n="commands.field.type">Type</span>
+                    <input type="text" id="ctl-type" readonly tabindex="-1" placeholder="—">
+                </label>
+                <label class="full ro"><span data-i18n="commands.field.currentState">Current state</span>
+                    <div id="state-readout" class="state-list">—</div>
+                </label>
+                <label><span data-i18n="commands.field.command">Command</span>
+                    <select id="sel-command"></select>
+                </label>
+                <label class="manual" id="value-field" style="display:none"><span data-i18n="commands.field.value">Value</span>
+                    <input type="number" id="cmd-value" step="any">
+                    <span class="hint" data-i18n="commands.hint.value">Enter a value for a parameterised command (e.g. a position).</span>
+                </label>
+                <label class="full manual separated" for="cmd-custom">
+                    <span class="hdr-row"><span data-i18n="commands.field.custom">Custom command (overrides)</span><button type="button" class="help-btn" id="custom-help-btn" data-i18n-attr="title:commands.help.btn" aria-expanded="false">?</button></span>
+                    <input type="text" id="cmd-custom" data-i18n-attr="placeholder:commands.field.customPh"
+                           placeholder="raw command token, e.g. hsv(120,100,80)" autocomplete="off">
+                    <span class="hint" data-i18n="commands.hint.custom">Leave empty to use the selected command.</span>
+                    <div class="help-box" id="custom-help" hidden data-i18n="commands.help.custom"></div>
+                </label>
+            </div>
+            <hr class="btn-sep">
+            <button class="btn" id="btn-send" data-i18n="commands.btn.send" disabled>Send</button>
+            <div class="result" id="result"></div>
+        </section>
+    </main>
+
+    <!--
+      Topology pre-rendered server-side (same pattern + `</` escaping as /states).
+      Each control carries: controlName, roomName, catName, type, uuid.
+      Topology here includes sub-controls (e.g. the individual Dimmer / Switch
+      outputs of a LightControllerV2), addressed by their own uuidAction.
+      CONTROL_STATES maps each command-target UUID to its named states
+      (name + state-UUID pairs). The page derives from it both the state-UUID to
+      control resolution (so pasting a state UUID picks the control) AND the list
+      of a selected control's states, whose current values are fetched from
+      /api/v1/state/current and kept live from the SSE stream.
+    -->
+    <script>
+        window.TOPOLOGY       = {topologyJson.raw};
+        window.CONTROL_STATES = {controlStatesJson.raw};
+    </script>
+
+    <script>
+        (function () {
+            var T = window.TOPOLOGY || { rooms: [], categories: [], controls: [] };
+            var CONTROL_STATES = window.CONTROL_STATES || {};   // command-target UUID -> list of name/uuid pairs
+            var SNAPSHOT = {};   // state-UUID -> last value (formatted/unit/ts), from /api/v1/state/current + SSE
+            var REGISTRY = {};   // control type -> command defs, loaded from /js/control-commands.json
+
+            // Derive state-UUID -> command-target UUID (lowercased keys) for the
+            // UUID-paste resolution, straight from the per-control state lists.
+            var STATE_INDEX = {};
+            Object.keys(CONTROL_STATES).forEach(function (cu) {
+                (CONTROL_STATES[cu] || []).forEach(function (s) {
+                    if (s && s.uuid) STATE_INDEX[s.uuid.toLowerCase()] = cu;
+                });
+            });
+
+            var selRoom    = document.getElementById('sel-room');
+            var selCat     = document.getElementById('sel-cat');
+            var filterUuid = document.getElementById('filter-uuid');
+            var selControl = document.getElementById('sel-control');
+            var ctlType    = document.getElementById('ctl-type');
+            var selCommand = document.getElementById('sel-command');
+            var cmdValue   = document.getElementById('cmd-value');
+            var valueField = document.getElementById('value-field');
+            var cmdCustom  = document.getElementById('cmd-custom');
+            var btnSend    = document.getElementById('btn-send');
+            var resultBox  = document.getElementById('result');
+            var stateReadout = document.getElementById('state-readout');
+            var uuidErr      = document.getElementById('uuid-err');
+
+            function localeSort(a, b) { return a.localeCompare(b, 'fr', { sensitivity: 'base' }); }
+
+            function fillSelect(sel, values, placeholder, labelFn, valueFn) {
+                var current = sel.value;
+                sel.innerHTML = '';
+                var o0 = document.createElement('option');
+                o0.value = ''; o0.textContent = placeholder;
+                sel.appendChild(o0);
+                values.forEach(function (v) {
+                    var o = document.createElement('option');
+                    o.value = valueFn ? valueFn(v) : v;
+                    o.textContent = labelFn ? labelFn(v) : v;
+                    sel.appendChild(o);
+                });
+                // Preserve selection if still present.
+                var vals = Array.prototype.map.call(sel.options, function (o) { return o.value; });
+                sel.value = vals.indexOf(current) >= 0 ? current : '';
+            }
+
+            // Cascade: room -> cats -> controls (also filtered by UUID substring).
+            function recompute() {
+                var pickedRoom = selRoom.value;
+
+                var catsSet = new Set();
+                T.controls.forEach(function (c) {
+                    if (!pickedRoom || c.roomName === pickedRoom) catsSet.add(c.catName);
+                });
+                var catsList = pickedRoom ? Array.from(catsSet).sort(localeSort) : T.categories.slice();
+                fillSelect(selCat, catsList, t('states.filter.allFem'));
+
+                refillControls();
+            }
+
+            function refillControls() {
+                var pickedRoom = selRoom.value;
+                var pickedCat  = selCat.value;
+                var uuidQ      = (filterUuid.value || '').trim().toLowerCase();
+
+                var matches = T.controls.filter(function (c) {
+                    if (pickedRoom && c.roomName !== pickedRoom) return false;
+                    if (pickedCat && c.catName !== pickedCat) return false;
+                    if (uuidQ) {
+                        var cu = (c.uuid || '').toLowerCase();
+                        // Match on the control's own UUID (substring) OR when the
+                        // query is a state UUID that resolves to this control.
+                        var viaState = STATE_INDEX[uuidQ] && STATE_INDEX[uuidQ].toLowerCase() === cu;
+                        if (cu.indexOf(uuidQ) < 0 && !viaState) return false;
+                    }
+                    return true;
+                });
+                matches.sort(function (a, b) { return localeSort(a.controlName, b.controlName); });
+
+                var prev = selControl.value;
+                selControl.innerHTML = '';
+                var o0 = document.createElement('option');
+                o0.value = ''; o0.textContent = t('commands.selectControl');
+                selControl.appendChild(o0);
+                matches.forEach(function (c) {
+                    var o = document.createElement('option');
+                    o.value = c.uuid;
+                    o.textContent = c.controlName + '  ·  ' + c.type;
+                    o.dataset.type = c.type;
+                    selControl.appendChild(o);
+                });
+                var vals = Array.prototype.map.call(selControl.options, function (o) { return o.value; });
+                selControl.value = vals.indexOf(prev) >= 0 ? prev : '';
+                onControlChange();
+            }
+
+            // Find the single control the pasted text designates, or null.
+            // Resolution order:
+            //   1. a control's command-target UUID (exact, else unique substring);
+            //   2. a STATE UUID (exact) → its control's command-target UUID
+            //      (lets the operator paste what MQTT / /states expose).
+            function resolveControl(q) {
+                var exact = T.controls.filter(function (c) { return (c.uuid || '').toLowerCase() === q; });
+                if (exact.length === 1) return exact[0];
+                // State UUID → command target (exact full-UUID match only).
+                var target = STATE_INDEX[q];
+                if (target) {
+                    var byState = T.controls.filter(function (c) { return (c.uuid || '').toLowerCase() === target.toLowerCase(); });
+                    if (byState.length === 1) return byState[0];
+                }
+                if (exact.length) return null;   // ambiguous exact — bail
+                var sub = T.controls.filter(function (c) { return (c.uuid || '').toLowerCase().indexOf(q) >= 0; });
+                return sub.length === 1 ? sub[0] : null;
+            }
+
+            // When the UUID filter uniquely identifies a control, jump to it:
+            // auto-select its room + category + the control itself (so the Type,
+            // UUID and command list populate without touching the dropdowns).
+            function tryAutoSelectByUuid() {
+                var q = (filterUuid.value || '').trim().toLowerCase();
+                if (!q) return false;
+                var c = resolveControl(q);
+                if (!c) return false;        // only auto-select when unambiguous
+                selRoom.value = c.roomName;
+                recompute();                 // rebuild category options for the room (+ controls)
+                selCat.value = c.catName;
+                refillControls();            // rebuild control options for room + category + uuid
+                selControl.value = c.uuid;
+                onControlChange();
+                return true;
+            }
+
+            // True when the query matches ANY control — by command-target UUID
+            // (substring) or as a state UUID — regardless of the room/category
+            // filters. Used to tell "not found at all" from "not in this room".
+            function uuidMatchesAny(q) {
+                if (!q) return true;
+                q = q.toLowerCase();
+                if (STATE_INDEX[q]) return true;
+                return T.controls.some(function (c) { return (c.uuid || '').toLowerCase().indexOf(q) >= 0; });
+            }
+
+            function relabelPlaceholder(sel, text) {
+                if (sel.options.length && sel.options[0].value === '') sel.options[0].textContent = text;
+            }
+
+            // Toggle the "UUID not found" state: Room + Category show "Unknown"
+            // in red, the filter field is tinted red, and the control + readouts
+            // are cleared. Reverted as soon as the filter matches again.
+            function setNotFound(on) {
+                selRoom.classList.toggle('notfound', on);
+                selCat.classList.toggle('notfound', on);
+                filterUuid.classList.toggle('notfound', on);
+                if (on) {
+                    relabelPlaceholder(selRoom, t('commands.filter.unknown'));
+                    relabelPlaceholder(selCat, t('commands.filter.unknown'));
+                    selRoom.value = '';
+                    selCat.value = '';
+                    selControl.innerHTML = '';
+                    var o0 = document.createElement('option');
+                    o0.value = ''; o0.textContent = t('commands.selectControl');
+                    selControl.appendChild(o0);
+                    selControl.value = '';
+                    onControlChange();
+                } else {
+                    relabelPlaceholder(selRoom, t('states.filter.allFem'));
+                    relabelPlaceholder(selCat, t('states.filter.allFem'));
+                }
+            }
+
+            function onControlChange() {
+                var opt  = selControl.options[selControl.selectedIndex];
+                var type = (opt && opt.dataset) ? (opt.dataset.type || '') : '';
+                ctlType.value = type || '';
+                populateCommands(type);
+                renderStates();
+                updateSendState();
+            }
+
+            // User picked a control from the dropdown → mirror its UUID into the
+            // single UUID field (the field doubles as filter input + readout).
+            function onControlPicked() {
+                if (selControl.value) {
+                    filterUuid.value = selControl.value;
+                    setNotFound(false);
+                }
+                onControlChange();
+            }
+
+            // Cascade navigation (Room/Category) → the UUID field is no longer a
+            // readout of a chosen control, so clear it (and any not-found state)
+            // before filtering by room/category.
+            function clearUuidForCascade() {
+                filterUuid.value = '';
+                setNotFound(false);
+            }
+
+            // Render the current value of each state of the selected control,
+            // from the SNAPSHOT (seeded by /api/v1/state/current, kept live by
+            // the SSE stream). `flashUuid` highlights the row that just changed.
+            function renderStates(flashUuid) {
+                var uuid = selControl.value;
+                var refs = uuid ? CONTROL_STATES[uuid] : null;
+                if (!uuid || !refs || !refs.length) {
+                    stateReadout.innerHTML = '';
+                    stateReadout.textContent = uuid ? t('commands.state.none') : '—';
+                    return;
+                }
+                stateReadout.innerHTML = '';
+                refs.forEach(function (r) {
+                    var row = document.createElement('div');
+                    row.className = 'state-row';
+                    var nameSpan = document.createElement('span');
+                    nameSpan.className = 'state-name';
+                    nameSpan.textContent = r.name;
+                    var valSpan = document.createElement('span');
+                    valSpan.className = 'state-val' + (flashUuid && r.uuid === flashUuid ? ' fresh' : '');
+                    var sv = SNAPSHOT[r.uuid];
+                    valSpan.textContent = sv ? sv.formatted : t('commands.state.noValue');
+                    row.appendChild(nameSpan);
+                    row.appendChild(valSpan);
+                    stateReadout.appendChild(row);
+                });
+            }
+
+            // True when the selected control owns the given state-UUID.
+            function selectedControlHasState(stateUuid) {
+                var refs = selControl.value ? CONTROL_STATES[selControl.value] : null;
+                return !!(refs && refs.some(function (r) { return r.uuid === stateUuid; }));
+            }
+
+            function populateCommands(type) {
+                var defs = REGISTRY[type];
+                selCommand.innerHTML = '';
+                var o0 = document.createElement('option');
+                o0.value = '';
+                if (defs && defs.length) {
+                    o0.textContent = '—';
+                    selCommand.appendChild(o0);
+                    defs.forEach(function (d, i) {
+                        var o = document.createElement('option');
+                        o.value = String(i);
+                        o.textContent = d.cmd;
+                        selCommand.appendChild(o);
+                    });
+                    selCommand.disabled = false;
+                } else {
+                    // No mapped commands for this type (read-only sensor, or type
+                    // not curated) -> only the free-form field is usable.
+                    o0.textContent = t('commands.noPredefined');
+                    selCommand.appendChild(o0);
+                    selCommand.disabled = true;
+                }
+                onCommandChange();
+            }
+
+            function currentDef() {
+                var type = ctlType.value;
+                var defs = REGISTRY[type];
+                if (!defs || selCommand.disabled || !selCommand.value) return null;
+                return defs[parseInt(selCommand.value, 10)] || null;
+            }
+
+            function onCommandChange() {
+                var d = currentDef();
+                if (d && d.value) {
+                    // Parameterised command → reveal the value field.
+                    valueField.style.display = '';
+                    if (d.value.min !== undefined) cmdValue.min = d.value.min; else cmdValue.removeAttribute('min');
+                    if (d.value.max !== undefined) cmdValue.max = d.value.max; else cmdValue.removeAttribute('max');
+                } else {
+                    // Command takes no value → hide the field entirely (not just disable).
+                    valueField.style.display = 'none';
+                    cmdValue.value = '';
+                }
+                updateSendState();
+            }
+
+            // Build the command string to send (custom overrides the picker).
+            function buildCommand() {
+                var custom = (cmdCustom.value || '').trim();
+                if (custom) return custom;
+                var d = currentDef();
+                if (!d) return '';
+                if (d.value) {
+                    var v = (cmdValue.value || '').trim();
+                    if (v === '') return '';
+                    // The value placeholder token (open-brace v close-brace) is unicode-escaped
+                    // below so Qute's checked-template parser does not treat it as an expression.
+                    return d.cmd.replace(String.fromCharCode(123) + 'v' + String.fromCharCode(125), v);
+                }
+                return d.cmd;
+            }
+
+            // The target UUID a send is addressed to: a custom command sends to
+            // whatever is in the UUID field (advanced "raw command → a UUID"
+            // path); a predefined command sends to the selected control.
+            function targetUuid() {
+                var custom = (cmdCustom.value || '').trim();
+                if (custom) return (filterUuid.value || '').trim();
+                return selControl.value || '';
+            }
+
+            // Red-frame the UUID field + reveal the "UUID required" message.
+            function setUuidError(on) {
+                filterUuid.classList.toggle('invalid', on);
+                uuidErr.hidden = !on;
+            }
+
+            function updateSendState() {
+                var cmd  = buildCommand();
+                var uuid = targetUuid();
+                btnSend.disabled = !(uuid && cmd);
+                // A custom command typed but the UUID field is empty → block + flag.
+                var custom = (cmdCustom.value || '').trim();
+                setUuidError(!!custom && !(filterUuid.value || '').trim());
+            }
+
+            function showResult(cls, msg) {
+                resultBox.className = 'result ' + cls;
+                resultBox.textContent = msg;
+            }
+
+            function send() {
+                var uuid = targetUuid();
+                var command = buildCommand();
+                if (!uuid || !command) return;
+                btnSend.disabled = true;
+                showResult('', t('commands.toast.sending'));
+                fetch('/api/v1/commands', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uuid: uuid, command: command })
+                }).then(function (r) {
+                    return r.json().catch(function () { return {}; }).then(function (body) {
+                        return { status: r.status, body: body };
+                    });
+                }).then(function (res) {
+                    if (res.status === 200) {
+                        showResult('ok', t('commands.toast.sent') + ' — ' + command);
+                    } else if (res.status === 409) {
+                        showResult('err', t('commands.result.notRunning'));
+                    } else {
+                        showResult('err', t('commands.toast.error') + (res.body && res.body.reason ? ' — ' + res.body.reason : ''));
+                    }
+                }).catch(function () {
+                    showResult('err', t('commands.toast.error'));
+                }).finally(function () {
+                    updateSendState();
+                });
+            }
+
+            selRoom.addEventListener('change', function () { clearUuidForCascade(); recompute(); });
+            selCat.addEventListener('change', function () { clearUuidForCascade(); refillControls(); });
+            filterUuid.addEventListener('input', function () {
+                var q = (filterUuid.value || '').trim();
+                if (tryAutoSelectByUuid()) { setNotFound(false); }
+                else if (q && !uuidMatchesAny(q)) { setNotFound(true); }
+                else { setNotFound(false); refillControls(); }
+                updateSendState();   // refresh the custom-command / empty-UUID guard
+            });
+            selControl.addEventListener('change', onControlPicked);
+            selCommand.addEventListener('change', onCommandChange);
+            cmdValue.addEventListener('input', updateSendState);
+            cmdCustom.addEventListener('input', updateSendState);
+            btnSend.addEventListener('click', send);
+            document.getElementById('custom-help-btn').addEventListener('click', function (e) {
+                e.preventDefault();   // don't let the label forward the click to the input
+                var box = document.getElementById('custom-help');
+                box.hidden = !box.hidden;
+                this.setAttribute('aria-expanded', box.hidden ? 'false' : 'true');
+            });
+            window.addEventListener('i18n:changed', function () {
+                // Re-render placeholders that come from t() (dropdown option 0).
+                recompute();
+            });
+
+            // Load the curated type -> commands registry, then build the UI.
+            fetch('/js/control-commands.json')
+                .then(function (r) { return r.json(); })
+                .then(function (json) { REGISTRY = json || {}; })
+                .catch(function () { REGISTRY = {}; })
+                .finally(function () {
+                    fillSelect(selRoom, T.rooms.slice(), t('states.filter.allFem'));
+                    recompute();
+                });
+
+            // Seed the current-state snapshot (immediate values), then keep it
+            // live from the same SSE stream the /states page uses.
+            fetch('/api/v1/state/current')
+                .then(function (r) { return r.json(); })
+                .then(function (json) { SNAPSHOT = json || {}; renderStates(); })
+                .catch(function () { /* no snapshot yet — stays live-only */ });
+
+            var liveStream = null;
+            if (typeof window.EventSource !== 'undefined') {
+                liveStream = new EventSource('/api/v1/state/stream');
+                liveStream.onmessage = function (evt) {
+                    var p;
+                    try { p = JSON.parse(evt.data); } catch (e) { return; }
+                    if (!p || p.type !== 'state' || !p.uuid) return;
+                    SNAPSHOT[p.uuid] = { formatted: p.formatted, unit: p.unit, ts: p.ts };
+                    if (selectedControlHasState(p.uuid)) renderStates(p.uuid);
+                };
+            }
+            window.addEventListener('pagehide', function () {
+                if (liveStream) { liveStream.close(); liveStream = null; }
+            });
+
+            // ---- Inbound (MQTT) command processing on/off toggle --------------
+            var inboundToggle  = document.getElementById('inbound-toggle');
+            var inboundLabel   = document.querySelector('.inbound-label');
+            var inboundEnabled = null;
+            function renderInbound() {
+                if (inboundEnabled === null) {
+                    inboundToggle.textContent = '…';
+                    inboundToggle.className = 'inbound-toggle';
+                } else {
+                    inboundToggle.textContent = inboundEnabled ? t('commands.inbound.on') : t('commands.inbound.off');
+                    inboundToggle.className = 'inbound-toggle ' + (inboundEnabled ? 'on' : 'off');
+                }
+                inboundToggle.setAttribute('aria-pressed', inboundEnabled ? 'true' : 'false');
+                inboundToggle.title = t('commands.inbound.toggle');
+                inboundLabel.classList.toggle('off', inboundEnabled === false);
+            }
+            function loadInbound() {
+                fetch('/api/v1/commands/inbound')
+                    .then(function (r) { return r.json(); })
+                    .then(function (j) { inboundEnabled = !!j.enabled; })
+                    .catch(function () { inboundEnabled = null; })
+                    .finally(renderInbound);
+            }
+            inboundToggle.addEventListener('click', function () {
+                if (inboundEnabled === null) { loadInbound(); return; }
+                var next = !inboundEnabled;
+                inboundToggle.disabled = true;
+                fetch('/api/v1/commands/inbound', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: next })
+                }).then(function (r) { return r.json(); })
+                  .then(function (j) { inboundEnabled = !!j.enabled; })
+                  .catch(function () {})
+                  .finally(function () { inboundToggle.disabled = false; renderInbound(); });
+            });
+            window.addEventListener('i18n:changed', renderInbound);
+            loadInbound();
+        })();
+    </script>
+</body>
+</html>

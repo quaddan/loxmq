@@ -38,8 +38,8 @@ Current inventory:
 
 | Tier                             | Files               | Speed | When to use it                                                                                                               |
 |----------------------------------|---------------------|-------|------------------------------------------------------------------------------------------------------------------------------|
-| Unit (`@QuarkusTest`)            | **49** `*Test.java` | ~10 s | Everything, by default. Business logic, parsing, crypto, state.                                                              |
-| IT   (`@QuarkusIntegrationTest`) | **13** `*IT.java`   | ~45 s | Validation of the packaged jar against real external services (Mosquitto Docker) or simulated ones (fake miniserver Vert.x). |
+| Unit (`@QuarkusTest`)            | **50** `*Test.java` | ~10 s | Everything, by default. Business logic, parsing, crypto, state.                                                              |
+| IT   (`@QuarkusIntegrationTest`) | **14** `*IT.java`   | ~45 s | Validation of the packaged jar against real external services (Mosquitto Docker) or simulated ones (fake miniserver Vert.x). |
 
 ---
 
@@ -210,11 +210,23 @@ a real WebSocket server (see `FakeMiniserverFullResource` in §4).
 | `TokenRefreshSchedulerTest` (4)         | Schedule / cancel / replace.                           |
 | `MqttReconnectSchedulerTest` (4)        | Single-flight retry.                                   |
 | `StatesPublisherTest` (BATCH+SINGLE, 9) | Events → publish, mode dispatch.                       |
-| `CommandSubscriberTest` (4)             | MQTT message → CDI event.                              |
+| `CommandSubscriberTest` (12)            | MQTT message → CDI event; incl. inbound-gate DISABLED → drop. |
 | `CommandResponsePublisherTest` (2)      | CDI event → MQTT publish.                              |
 | `AppInfoPublisherTest` (3)              | `MiniserverConnectedEvent` → JSON retained.            |
 | `LoxApp3PublisherTest` (3)              | Cache → MQTT retained verbatim.                        |
 | `ApplicationSmokeTest` (7)              | Boot + management endpoints.                           |
+
+#### v1.2.0 additions
+
+| Test class                              | What                                                                      |
+|-----------------------------------------|---------------------------------------------------------------------------|
+| `LoxApp3MetadataResolverTest`           | `computeCommandSurface` — sub-controls exposed as first-class controls + per-control `controlStates` (named state list). |
+| `CommandSubscriberTest`                 | Inbound processing **DISABLED** (`InboundCommandGate`) ⇒ a well-formed command is dropped (`DROP-DISABLED`), no CDI event fired. |
+| `LogsResourceTest`                      | `deleteOld` removes rotation backups but keeps the active `.log`; incremental `?since=` returns only the appended bytes + EOF offset, and re-syncs past EOF (`X-Log-Reset`). |
+| `LoxoneCloseCodeTest`                   | Close code **4009** `MINISERVER_OUT_OF_SERVICE` → `ReconnectPolicy.OUT_OF_SERVICE`. |
+| `ReconnectSchedulerTest`                | OUT_OF_SERVICE cadence (30 s initial, then 15 s retry).                   |
+| `KeepAliveWatchdogTest`                 | Missed-keepalive watchdog trips `onConnectionDead`; stale-baseline guard (no false trip after reconnect). |
+| `SessionOrchestratorTest`               | `onError` schedules reconnect; `onConnectionDead`; inbound bounded-queue burst; synchronous `sendCommand`. |
 
 ---
 
@@ -343,6 +355,36 @@ active Maven profile:
 ./mvnw verify -Pnative,integration
 ```
 
+> ### ⚠️ `-Pnative,integration` SILENTLY SKIPS the ITs
+> The `native` profile sets `<skipITs>true</skipITs>` and is declared **after**
+> the `integration` profile (`<skipITs>false</skipITs>`) in `pom.xml`. When both
+> are active, Maven's **last-declared active profile wins** → `native` wins →
+> `skipITs=true` → Failsafe prints *"Tests are skipped"* and runs **nothing**
+> against the native binary (the image still builds, but no IT validates it).
+> `scripts/test-native-parity.sh`, as written, relies on the opposite assumption
+> and therefore skips the ITs too.
+>
+> **To actually run the ITs against the native binary**, add `-DskipITs=false`
+> (a CLI `-D` user-property overrides profile-defined properties):
+>
+> ```bash
+> # Build native + run ALL ITs against it.
+> ./mvnw verify -Pnative,integration -DskipITs=false
+>
+> # Re-run ITs against the EXISTING binary (no ~10-min rebuild):
+> ./mvnw verify -Pnative,integration -DskipITs=false \
+>             -Dquarkus.native.reuse-existing=true \
+>             -Dit.test=CommandsPageIT,LiveStatesPageIT
+> ```
+>
+> **Testcontainers/Ryuk caveat**: the broker/crypto round-trip ITs
+> (`BrokerCrashRecoveryIT`, `CommandRoundTripIT`, `CryptoRoundTripIT`,
+> `LiveBrokerIT`, `StateEventsRoundTripIT`) need Docker; without a reachable
+> Docker/Ryuk they fail with `ContainerLaunchException … ryuk` — **environmental,
+> not a code regression**. The page ITs (`CommandsPageIT`, `LiveStatesPageIT`,
+> `UsersPageIT`, `SchedulesPageIT`, `AdminHappyPathIT`, the bootstrap/handshake
+> ITs) need no container and are the ones that guard native serialization.
+
 #### Why it's necessary in addition to the JVM
 
 GraalVM `native-image` strips at compilation everything it cannot
@@ -385,6 +427,17 @@ absorb the async `@ObservesAsync`, asserts that the rendered HTML contains
 the names of rooms / cats / controls from the fixture (and **does not** have
 the signature `{"rooms":[],"categories":[],"controls":[]}` of the type-107
 fallback).
+
+`CommandsPageIT.java` (v1.2.0) applies the same pattern to `/commands`:
+it asserts the embedded command-surface **topology** + **`CONTROL_STATES`**
+(whose values are `LoxApp3MetadataResolver.StateRef` records — registered in
+`NativeReflectionConfig`, serialized manually inline in `CommandsPageResource`),
+and that `GET /api/v1/state/current` serves the live `StateValue` for the
+fixture's state-UUID. The negative assertions guard against the empty-topology
+and empty-`CONTROL_STATES` fallbacks. (The `GET /api/v1/state/current` return
+is a **typed** JAX-RS `Map<String, LiveStateSnapshot.StateValue>`, so Quarkus
+auto-registers `StateValue` — only the manual `StateRef` serialization needed a
+`NativeReflectionConfig` entry.)
 
 #### Operational cost
 
@@ -835,7 +888,8 @@ tested":
 | Inbound MQTT commands → Miniserver → response                | `CommandRoundTripIT`                                                                  |
 | Boot chain (MQTT → bootstrap → RUNNING session)              | `BootProfileSmokeIT` + `ApplicationSmokeIT`                                           |
 | Admin happy path (users + schedules CRUD)                    | `AdminHappyPathIT`                                                                    |
-| Native-image regression                                      | `./mvnw verify -Pnative,integration`                                                  |
+| `/commands` page surface + `/api/v1/state/current` (native)  | `CommandsPageIT` (command-surface topology + `CONTROL_STATES` / `StateRef` + `StateValue`) |
+| Native-image regression                                      | `./mvnw verify -Pnative,integration -DskipITs=false` (see §3.5 — bare `-Pnative,integration` skips ITs) |
 
 ---
 

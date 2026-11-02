@@ -117,6 +117,11 @@ public class StateStreamResource
     //  CDI observers — translate events to SSE payloads.
     // ------------------------------------------------------------------------
 
+    /**
+     * Async CDI observer: on a {@link SessionStateChangedEvent}, emits a
+     * {@code {"type":"session",…}} payload (ts, previous, current, lastError)
+     * onto the SSE stream.
+     */
     public void onSessionStateChanged( @ObservesAsync SessionStateChangedEvent ev )
     {
         String payload = """
@@ -128,12 +133,21 @@ public class StateStreamResource
         emit( payload );
     }
 
+    /**
+     * CDI observer: on a {@link MqttConnectedEvent}, emits a
+     * {@code {"type":"mqtt-connected","ts":…}} payload onto the SSE stream.
+     */
     public void onMqttConnected( @Observes MqttConnectedEvent ev )
     {
         emit( """
               {"type":"mqtt-connected","ts":"%s"}""".formatted( Instant.now().toString() ) );
     }
 
+    /**
+     * CDI observer: on a {@link MqttDisconnectedEvent}, emits a
+     * {@code {"type":"mqtt-disconnected",…}} payload (ts, source, reason)
+     * onto the SSE stream.
+     */
     public void onMqttDisconnected( @Observes MqttDisconnectedEvent ev )
     {
         emit( """

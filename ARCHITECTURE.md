@@ -33,7 +33,7 @@ It is not purely headless.
 | Layer                | Choice                                                                                   | Why                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 |----------------------|------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | JVM                  | Java 25 LTS (`maven.compiler.release=25`)                                                | Quarkus officially supports LTS 17 / 21 / 25. We had initially aimed for Java 26 (latest non-LTS GA), but Mandrel/GraalVM doesn't yet handle bytecode v70 — the native image fails with "unsupported class file major version 70". The host JDK can stay on 26 (forward-compatible); only `--release` is pinned to 25. To bump as soon as Mandrel ships Java 26 support.                                                                                                                                                                                                                                           |
-| Framework            | Quarkus 3.37.0                                                                           | Stable current. Follows the non-LTS line in rolling-current policy. The closest LTS branches are 3.20 and 3.27 (older) and 3.43 (planned).                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Framework            | Quarkus 3.40.1.1                                                                           | Quarkus **3.40 LTS** — the current long-term-support line (released Sept 2026; LTS cadence ~6 months), consumed as `3.40.x` patches. The project tracks the latest Quarkus (per the JDK/Mandrel rule above), and 3.40 is both the latest release and an LTS. The prior LTS was 3.33 (March 2026); 3.20 and 3.27 are now EOL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | CDI                  | Quarkus ArC                                                                              | Compile-time DI, native-friendly.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Config               | SmallRye Config + `@ConfigMapping`                                                       | Compile-time validated, immutable interface tree. Constraint violations surface at first injection, never at runtime in a hot path.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | HTTP server          | Vert.x (Quarkus default)                                                                 | Embedded, non-blocking, TLS via Quarkus TLS Registry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -41,7 +41,7 @@ It is not purely headless.
 | Templates            | Qute (`quarkus-qute` + `quarkus-rest-qute`)                                              | Type-safe templates at build-time for the dashboard.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | WebSocket            | Quarkus WebSockets Next                                                                  | Client (to talk to the Miniserver) and server in the same extension.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | Outbound HTTP        | `quarkus-rest-client`                                                                    | Used for synchronous bootstrap calls (`jdev/cfg/apiKey`, `jdev/sys/getPublicKey`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| MQTT v5              | `quarkus-hivemq-client` 2.5.0 (Quarkiverse extension wrapping HiveMQ MQTT Client 1.3.14) | Migrated from raw `com.hivemq:hivemq-mqtt-client`. The extension emits `RuntimeInitializedPackageBuildItem("com.hivemq")` required for the native image (the raw dep segfaults on build-time init of Netty's `UnpooledByteBufAllocator`). API unchanged — we still drive the builder directly. The bundled SmallRye Reactive Messaging connectors (`HiveMQMqttConnector` + generic `MqttConnector` pulled transitively by `smallrye-reactive-messaging-mqtt`) are both excluded via `quarkus.arc.exclude-types` (we use the raw builder API, not the stream abstraction).                                          |
+| MQTT v5              | `quarkus-hivemq-client` 2.6.0 (Quarkiverse extension wrapping HiveMQ MQTT Client 1.4.0) | Migrated from raw `com.hivemq:hivemq-mqtt-client`. The extension emits `RuntimeInitializedPackageBuildItem("com.hivemq")` required for the native image (the raw dep segfaults on build-time init of Netty's `UnpooledByteBufAllocator`). API unchanged — we still drive the builder directly. The bundled SmallRye Reactive Messaging connectors (`HiveMQMqttConnector` + generic `MqttConnector` pulled transitively by `smallrye-reactive-messaging-mqtt`) are both excluded via `quarkus.arc.exclude-types` (we use the raw builder API, not the stream abstraction).                                          |
 | TLS                  | Quarkus TLS Registry                                                                     | Named TLS configs (server, miniserver, broker) referenced from `application.yaml`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Health               | SmallRye Health (MicroProfile Health 4)                                                  | `/q/health`, `/q/health/live`, `/q/health/ready`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Metrics              | Micrometer + Prometheus exporter                                                         | Replaces MicroProfile Metrics (deprecated upstream).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -63,11 +63,19 @@ com.quaddan.iot.loxmq
 │                   dashboard (/, DashboardResource) with Health panel,
 │                   live states (/states, LiveStatesResource; live feed over
 │                   SSE via StateStreamResource + LiveStateSseEnricher),
+│                   commands (/commands, CommandsPageResource; send to a control
+│                   via POST /api/v1/commands + per-type command registry),
+│                   system (/system, SystemPageResource; run a diagnostic command
+│                   via POST /api/v1/system-command, allow-list from
+│                   SystemCommandRegistry + system-commands.json),
 │                   logs (/logs), schedules (/schedules), users (/users) —
-│                   the last three each a *PageResource + REST *Resource pair
+│                   the page/REST pairs; LiveStateSnapshot (last value per
+│                   state-UUID) + StateSnapshotResource (GET /api/v1/state/current,
+│                   read-model for the /commands current-state readout)
 ├── transport/    — MQTT Publisher / subscriber (HiveMQ via Quarkiverse extension)
 │   ├── publish/     — AppInfo, LoxApp3, States (SINGLE/BATCH), CommandResponse, OOS
-│   ├── subscribe/   — CommandSubscriber (retained-drop + size-cap guards)
+│   ├── subscribe/   — CommandSubscriber (retained-drop + size-cap + disabled-gate
+│   │                  guards) + InboundCommandGate (runtime kill-switch)
 │   ├── connection/  — TransportFamily + TransportConnectionResolver (tcp/ssl/ws/wss)
 │   ├── MqttClient + HiveMqClient
 │   ├── MqttMetrics (Micrometer counters/gauges/timers)
@@ -93,16 +101,20 @@ com.quaddan.iot.loxmq
 │   ├── session/     — SessionOrchestrator + state machine + SessionTracker
 │   │                  + MiniserverWebSocket / JdkMiniserverWebSocket + MiniserverToken
 │   │                  + KeepAliveScheduler (V17.0 §Detecting issues)
-│   │                  + ReconnectScheduler + TokenRefreshScheduler + LoxApp3Cache
-│   │                  + LoxApp3MetadataResolver (Topology snapshot for /states)
+│   │                  + ReconnectScheduler (NORMAL / LONG_PAUSE / DO_NOT_RECONNECT /
+│   │                  OUT_OF_SERVICE policies) + TokenRefreshScheduler + LoxApp3Cache
+│   │                  + LoxApp3MetadataResolver (Topology snapshot for /states;
+│   │                  CommandSurface — topology incl. sub-controls + controlStates —
+│   │                  for /commands; parse() recurses subControls)
 │   └── state/       — MiniserverState (shared identity slot)
-│                       + SdCardHealthService (jdev/sys/sdtest, once/session)
-│                       + FirmwareUpdateService (Loxone updatecheck.xml, once/session)
+│                       + SdCardHealthService (jdev/sys/sdtest, once/session + on-demand)
+│                       + FirmwareUpdateService (Loxone updatecheck.xml, once/session + on-demand)
 └── util/
     ├── logging/     — LoxmqConsoleFormatter (xterm-256 + emojis, JVM mode)
     │                  + LoggingProducers (custom formatter wiring) + LoggingReflectionConfig
     ├── templates/   — Qute @TemplateExtension (formatLocal, formatMs)
     ├── graal/       — @TargetClass substitutions (Target_JCTools)
+    ├── TemplateGlobals — @TemplateGlobal cacheBust (per-build token for ?v= on static JS)
     └── NativeReflectionConfig — reflection registration for native image
 ```
 
@@ -171,9 +183,26 @@ The two legs are reconnected by different actors, intentionally:
 | WS Miniserver | Custom `MiniserverReconnector` | Policy-driven via `LoxoneCloseCode → ReconnectPolicy` — three explicit policies, intermediate state observable in tests |
 | MQTT broker   | HiveMQ MQTT Client lib         | Exponential backoff from `loxone.transport.reconnection.{minDelay,maxDelay}`, gated on `.automatic`                     |
 
-The Miniserver side carries Loxone-specific close codes (4003-4008)
+The Miniserver side carries Loxone-specific close codes (4003-4009)
 with business meaning (user disabled, structure-file version mismatch,
 …). A lib cannot know those.
+
+Two v1.2.0 reliability additions on the Miniserver leg:
+
+- **OUT_OF_SERVICE policy** — close code **4009**
+  (`MINISERVER_OUT_OF_SERVICE`, empirically observed, undocumented) and the
+  binary OOS indicator map to `ReconnectPolicy.OUT_OF_SERVICE`: a fixed
+  `loxone.miniserver.reconnect.out-of-service.initial-delay` (PT30S) then a
+  fixed `.retry-interval` (PT15S), distinct from the NORMAL exponential
+  backoff. Rationale: a Miniserver reboot takes ~30-60 s; retrying on the
+  short NORMAL schedule just burns connection attempts against a box that
+  is deliberately down.
+- **KeepAlive missed-response watchdog** — `KeepAliveScheduler` declares
+  the connection dead (→ reconnect) when the Miniserver stops answering
+  `keepalive` for `loxone.miniserver.ws.keepalive-max-missed` intervals
+  (default 3). The "no response for > X" baseline is `max(armedAt,
+  lastResponseAt)` — anchoring on `armedAt` after a reconnect avoids a
+  stale `lastResponseAt` tripping a false "dead" every interval.
 
 ## 8. Native image
 
@@ -198,7 +227,7 @@ Key invariants for the AOT build to remain functional:
   Reactive Messaging connector we don't use, bundled by the
   Quarkiverse extension — its `@Inject ExecutionHolder` chains to
   a RUNTIME_INIT Vert.x bean from STATIC_INIT, crashing native).
-- The `org.graalvm.nativeimage:svm:25.0.3` dep (provided) is the source
+- The `org.graalvm.nativeimage:svm:25.0.5` dep (provided) is the source
   of the `@TargetClass` / `@Alias` / `@RecomputeFieldValue` annotations.
 
 Build: `./mvnw package -Pnative -Dquarkus.profile=dev -Dquarkus.native.container-build=true -DskipTests`
@@ -282,15 +311,32 @@ crashing the binding.
 
 ### c. Inbound security
 
-Two guards on the MQTT handlers for topics `…/command` and `…/api`,
-in the order `retained → size → JSON parse`:
+Guards on the MQTT handlers for topics `…/command` and `…/api`, in the
+order `disabled → retained → size → JSON parse`:
 
+0. **Disabled gate** (v1.2.0) — `InboundCommandGate` is a runtime
+   kill-switch: when disabled (`PUT /api/v1/commands/inbound` from the
+   /commands page), every received command is dropped with a
+   `DROP-DISABLED` verdict + `binding.mqtt.inbound.dropped{reason=disabled}`
+   metric, before the retained/size/parse guards. In-memory + instance-wide
+   (one `@ApplicationScoped` flag, not per-browser) — resets to **enabled**
+   on restart. Does NOT affect the /commands page's own outbound sends.
 1. **Retained drop** — a message accidentally published with
    `retained=true` would replay at each CONNACK. The spec requires
    `retained=false` on these topics. Drop + WARN with preview.
 2. **Payload-size cap** — `loxone.transport.security.max-inbound-payload-bytes`
    (default 4096). Beyond: drop + WARN without attempting JSON
    parse (DoS protection by flooding).
+
+**Flood protection (v1.2.0)** — inbound commands that pass the guards are
+no longer dispatched synchronously on the HiveMQ (Netty) event-loop
+thread. `SessionOrchestrator` hands them to a bounded single-thread
+executor (`ArrayBlockingQueue`, cap
+`loxone.transport.security.inbound-queue-capacity` = 256); a burst can
+no longer stall the Netty loop or the broker read path. Overflow →
+`DROP-QUEUE-FULL` verdict + `binding.mqtt.inbound.dropped{reason=queue_full}`
+metric. The REST /commands send path stays synchronous (human, LAN, low
+volume) — see §j.
 
 ### d. LoxAPP3 cache TTL safety net
 
@@ -338,7 +384,7 @@ Two parts:
 Documented in full in `NATIVE.md`. The key measures:
 
 1. Migration `com.hivemq:hivemq-mqtt-client` → Quarkiverse
-   `quarkus-hivemq-client:2.5.0` extension (resolves the Netty
+   `quarkus-hivemq-client:2.6.0` extension (resolves the Netty
    `UnpooledByteBufAllocator` STATIC_INIT clash). CDI exclusion
    `HiveMQMqttConnector` (resolves the Vertx STATIC_INIT race).
 2. `@RegisterForReflection` on 11 Jackson DTOs +
@@ -568,6 +614,157 @@ the value emerges.
 | `management/DashboardResource.java`                       | +4 siblings in Templates.dashboard()                             |
 | `templates/DashboardResource/dashboard.html`              | 2 columns + Token panel + collapsible Bootstrap + associated CSS |
 | `test/.../management/TokenAndBootstrapEndpointsTest.java` | 4 cases (`@QuarkusTest`)                                         |
+
+### j. Commands page (`/commands`) — send to a control
+
+A UI + REST surface to send a command to a known Loxone control, mirroring
+the `/states` room → category → control cascade.
+
+- **Direct to the Miniserver, not via MQTT.** `POST /api/v1/commands
+  {uuid, command}` → `SessionOrchestrator.sendCommand()` builds
+  `jdev/sps/io/<uuid>/<command>`, encrypts it and sends it on the active
+  WebSocket **synchronously** (human in LAN, low volume), returning the
+  send outcome: `200` SENT / `409` NOT_RUNNING / `502` SEND_FAILED. This is
+  the I/O hot-path channel, distinct from the admin surface (HTTPS, §h) and
+  from the bounded inbound MQTT path (§c).
+- **We deliberately do NOT correlate the Miniserver's command response.**
+  The reply comes back as a RUNNING text frame → `MiniserverCommandResponseEvent`
+  → republished to the `command_response` MQTT topic only. A control-echo
+  correlation (pending futures + `@Observes`) existed previously and was
+  **removed** in favour of the synchronous HTTPS admin channel; it was not
+  re-added here. The page shows SENT/NOT_RUNNING/SEND_FAILED, not the
+  Miniserver's value.
+- **Sub-controls are first-class.** `LoxApp3MetadataResolver.CommandSurface`
+  recurses `subControls`, so the individual Dimmer / Switch outputs of a
+  `LightControllerV2` are selectable (named `"Parent › Child"`, room/category
+  inherited) and addressed by their own `uuidAction` — which may carry a
+  channel suffix like `/AI2`. This is exactly the documented
+  `jdev/sps/io/<uuidAction>/<cmd>` form (the code's own javadoc cites the
+  `…/AI1/on` example) — **no invention**. The per-type command tokens live in
+  the curated static registry `META-INF/resources/js/control-commands.json`
+  (29 commandable types — Switch, Dimmer, Jalousie, Gate, Window, `UpDown*`,
+  Alarm/SmokeAlarm, `IRoomControllerV2`, the `Central*` objects, …) + a free-form
+  fallback. Tokens are copied verbatim from the Structure-File *Commands*
+  sections; the full coverage matrix (supported / read-only / free-form-only,
+  with the reason for each) is **`docs/control-command-coverage.md`**.
+- **UUID resolution.** A single "UUID" field doubles as filter + readout:
+  pasting a **control** UUID (incl. a `/AIx` action) or a **state** UUID
+  (what MQTT / `/states` expose) resolves to and auto-selects the commandable
+  control. `CommandSurface.controlStates` (command-target UUID → named
+  `StateRef[]`) is serialized inline; the page derives the state→control
+  lookup from it. An unresolvable UUID flags Room + Category as "Unknown"
+  in red.
+- **Current-state readout.** `LiveStateSnapshot` keeps the last decoded value
+  per state-UUID (off the same CDI value/text events the SSE enricher
+  consumes — **no file reads, no broker round-trip**; it is the same value
+  retained on MQTT). `GET /api/v1/state/current` seeds the page; the existing
+  SSE stream (`/api/v1/state/stream`) keeps it live.
+- **Native golden rule applied.** `CommandSurface.controlStates` is serialized
+  manually inline (like the /states topology), so `LoxApp3MetadataResolver.StateRef`
+  is registered in `NativeReflectionConfig` and exercised by the native-parity
+  `CommandsPageIT` (which also checks `GET /api/v1/state/current`). The
+  `StateValue` returned by that typed REST endpoint is auto-registered.
+
+### k. Logs viewer — incremental real-time tail
+
+The `/logs` viewer refreshes near-real-time (auto 1 s) **without any
+backend cost when the page is closed** — it stays purely client-driven,
+ruling out server-side push (SSE tailer / always-on log handler) which
+would run even with no viewer.
+
+- `GET /api/v1/logs/{name}?since=<byteOffset>` returns **only the bytes
+  appended** since the client's cursor, plus `X-Log-Size` (new EOF offset)
+  and `X-Log-Reset`. The initial load (`?tail=N`) also returns `X-Log-Size`
+  so the client knows where to start. The client appends deltas, caps its
+  buffer, and re-applies level/filter without re-fetching.
+- Rotation / large-gap handling: if the client's `since` is past EOF or more
+  than `RESYNC_LIMIT` (2 MB) behind, the server returns a fresh tail flagged
+  `X-Log-Reset: true` and the client replaces its buffer.
+- **Old-log management:** a client-side toggle hides rotated backups
+  (`application.log.1`, `commands.log.2026-05-28`, …) by default, and
+  `DELETE /api/v1/logs/old` deletes **only** rotation backups — the active
+  `name.log` never matches `ROTATED_FILE_PATTERN` (suffix required) — returning
+  `{deleted, freedBytes}`.
+
+### l. Dashboard — on-demand diagnostics + freshness
+
+- **SD-card test** (`SdCardHealthService.runSelfTest()` → `POST /api/v1/sdcard/test`)
+  and **firmware check** (`FirmwareUpdateService.runCheck()` → `POST /api/v1/firmware/check`)
+  can be re-run on demand from the dashboard — the once-per-RUNNING observer
+  logic was extracted into a public method reused by both the observer and the
+  REST trigger. Each shows a freshness chip (`Tested at` / `Checked at <local time>`).
+- **Session state** shows a `depuis <local time>` chip from
+  `SessionTracker.stateChangedAt()`.
+- **Token created-at** (`Created at`) = `SessionTracker.tokenAcquiredAt()`, the
+  acquisition instant, updated **only when the token string changes** so a
+  refresh that extends the same JWT preserves it (no JWT `iat` decoded → no
+  invention; reset on DISCONNECTED/CLOSED).
+- **Button palette** unified app-wide: 🟢 green = create/add, 🔵 blue =
+  neutral action, 🔴 red = destructive/stop, grey = secondary.
+
+### m. System page (`/system`) — run a diagnostic command
+
+A UI + REST surface to run a Miniserver **diagnostic** command and show its
+**raw `LL` JSON reply** verbatim — distinct from `/commands` (§j): it does not
+drive a control, it queries the device.
+
+- **Authenticated HTTPS admin channel, not MQTT, not the WS I/O path.**
+  `POST /api/v1/system-command {command}` →
+  `MiniserverAdminCommandClient.sendResolvedPath()` — the `jdev/sps/`-only admin
+  client was generalized to send **any** `jdev/`-prefixed path (same `autht`
+  HMAC + token + concurrency slot + single retry as the Schedules/Users admin
+  surface, §h). Returns the Miniserver's `LL` sub-tree as-is: `200` / `409`
+  NOT_RUNNING / `502` on a Miniserver / transport error.
+- **Curated catalogue → `META-INF/resources/js/system-commands.json`.** 4 domains
+  (System, PLC `jdev/sps` status-only, Config/Network `jdev/cfg`, CAN bus
+  `jdev/bus`), ~42 commands, FR/EN/DE descriptions, each typed
+  `ro` / `action` / `destructive` (the UI gates `destructive` — `logoff`,
+  `reboot`, `sps/restart` — behind a `confirm`). **Source:** the operator's own
+  `docs/loxone/Loxone.postman_collection.json` (validated against the live device)
+  + a community diagnostics list — **not** the vendored PDFs; this is stated in the
+  file's `_comment`. User-management, token and crypto commands are deliberately
+  absent; non-`jdev` resources (`data/*`, `stats`, `dev/fsget/*`) are out of scope
+  (different transport).
+- **The catalogue IS the server-side allow-list.** `SystemCommandRegistry` loads
+  that same JSON at startup and a command runs **iff** it appears there (exact
+  match, or the `<cmd>/<value>` form of the single parameterised entry
+  `setdatetime`). So token/user/crypto commands can never be routed here **even
+  though they share the `jdev/sys/` namespace** — no regex blocklist to maintain.
+  **Fail-closed:** if the catalogue can't be read, every command is rejected.
+- **Save button.** Downloads the displayed reply client-side; filename = the
+  command's description (current language), extension inferred from the content
+  (`.json` → `.xml` if it starts with `<` → `.txt`).
+- **Native golden rule applied.** The registry is parsed with
+  `ObjectMapper.readTree` into a `JsonNode` tree (no reflective DTO binding), and
+  the JSON is declared under `quarkus.native.resources.includes` so the
+  classloader finds it in the native binary. The typed `SystemCommandRequest`
+  body and the `JsonNode` return are auto-registered; a native-parity IT for the
+  page remains to be added.
+
+### n. UI / build pitfalls (consolidated)
+
+- **Qute checked-template parses `{…}` everywhere** — including inside
+  inline `<script>` JS and HTML comments. Any `{identifier}` with **no space
+  after `{`** is treated as a template expression and fails the build
+  (`Only type-safe expressions are allowed`). Mitigations used in
+  `commands.html`: write `{ ` (brace + space, treated as literal), reword
+  comments, and unicode-escape genuine tokens — e.g. the Dimmer value
+  placeholder `{v}` is built as `String.fromCharCode(123)+'v'+String.fromCharCode(125)`.
+- **Native parity actually skips the ITs by default** — `mvn verify
+  -Pnative,integration` leaves `skipITs=true` because the `native` profile
+  (`skipITs=true`) is declared **after** `integration` (`skipITs=false`) in
+  `pom.xml`, and Maven's last-declared-active-profile wins. Pass
+  `-DskipITs=false` (a CLI `-D` overrides profile properties) to actually run
+  the ITs against the native binary; add `-Dquarkus.native.reuse-existing=true`
+  to reuse the just-built binary. `scripts/test-native-parity.sh` assumes the
+  opposite — a latent gap to fix.
+- **Incremental-tail byte alignment** — `tailFile()` strips the trailing
+  newline, so the `/logs` client restores one `\n` after the initial tail to
+  keep the byte deltas (which start at the EOF offset, after that `\n`)
+  line-aligned.
+- **Testcontainers / Ryuk** may fail to start in some environments
+  (`ContainerLaunchException … ryuk`), which makes the broker/crypto
+  round-trip ITs error — environmental, not a code regression.
 
 ## Spec references — Loxone V17 PDFs
 

@@ -69,6 +69,14 @@ public class LiveStatesResource
     @Inject
     ObjectMapper            jsonMapper;
 
+    /**
+     * {@code GET /states} — renders the "Live states" Qute page. Serialises
+     * the resolver's {@link LoxApp3MetadataResolver.Topology} to JSON (escaping
+     * {@code </} for safe inline {@code <script>} embedding; empty-topology
+     * fallback on serialisation failure) and hands it to the template to
+     * pre-populate the filter dropdowns. Media type {@code text/html}.
+     * LAN-only, unauthenticated.
+     */
     @GET
     public TemplateInstance get()
     {

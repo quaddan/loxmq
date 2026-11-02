@@ -62,12 +62,15 @@ import java.util.concurrent.atomic.AtomicReference;
  *   <li><b>Start</b>: observes {@link MiniserverConnectedEvent} —
  *       session reached RUNNING. Schedules the first tick at
  *       {@code now + interval}.</li>
- *   <li><b>Stop on send failure</b>: any throwable from
- *       {@link MiniserverWebSocket#sendText(String)} (typically a
- *       closed socket) cancels the schedule. The next
- *       {@code MiniserverConnectedEvent} restarts it. This avoids
- *       a separate {@code MiniserverDisconnectedEvent} hook — the
- *       send itself is the liveness probe of last resort.</li>
+ *   <li><b>Dead-link detection → reconnect</b>: a keepalive send that
+ *       throws ({@link MiniserverWebSocket#sendText(String)} on a closed
+ *       socket), OR the missed-response watchdog firing
+ *       ({@code keepaliveInterval × keepaliveMaxMissed} elapsed with no
+ *       reply — the half-open-TCP case after a Miniserver reboot that left
+ *       no RST), cancels the schedule and hands the dead link to
+ *       {@link SessionOrchestrator#onConnectionDead(String)}, which tears
+ *       the session down and schedules a reconnect. The next
+ *       {@link MiniserverConnectedEvent} re-arms this scheduler.</li>
  *   <li><b>Stop on shutdown</b>: {@link Shutdown} cancels the
  *       schedule and shuts down the executor.</li>
  * </ul>
@@ -98,6 +101,12 @@ public class KeepAliveScheduler
     @Inject
     jakarta.enterprise.inject.Instance< MqttMetrics > metricsInstance;
 
+    /** Lazy lookup (same cycle-avoidance rationale as {@link #metricsInstance}):
+     *  the watchdog / send-failure path hands a dead link back to the
+     *  orchestrator so it can tear the session down and schedule a reconnect. */
+    @Inject
+    jakarta.enterprise.inject.Instance< SessionOrchestrator > orchestrator;
+
     private       ScheduledExecutorService                executor;
     private final AtomicReference< ScheduledFuture< ? > > pendingRef        = new AtomicReference<>();
     /** Wall-clock instant the most recent {@code keepalive} text was sent.
@@ -110,6 +119,10 @@ public class KeepAliveScheduler
     /** Wall-clock instant the most recent response landed. Pair with
      *  {@link #lastRttRef} for "RTT measured at …" displays. */
     private final AtomicReference< Instant >              lastResponseAtRef = new AtomicReference<>();
+    /** Wall-clock baseline for the missed-response watchdog: set when the
+     *  schedule is armed (session reached RUNNING) and treated as the last
+     *  proof of life until the first keepalive response lands. */
+    private final AtomicReference< Instant >              armedAtRef        = new AtomicReference<>();
 
     @PostConstruct
     void init()
@@ -145,6 +158,9 @@ public class KeepAliveScheduler
         }
         // Cancel any leftover from a previous session before scheduling fresh.
         cancel();
+        // Reaching RUNNING is itself proof of life — seed the watchdog
+        // baseline so it measures from here until the first response lands.
+        armedAtRef.set( Instant.now() );
         LOG.infof( "KeepAlive scheduler ARMED — interval=%s, command=\"%s\"",
                    interval, config.miniserver().cmd().keepalive() );
         ScheduledFuture< ? > next = executor.scheduleAtFixedRate(
@@ -185,12 +201,42 @@ public class KeepAliveScheduler
                     ( Long ) rtt.toMillis(), event.arrivedAt() );
     }
 
-    /** One scheduler tick. Sends the {@code keepalive} text command and
-     *  records the send instant for RTT calculation. Any throwable
-     *  cancels the schedule — typically a closed socket, in which case
-     *  the next {@link MiniserverConnectedEvent} will re-arm us. */
+    /** One scheduler tick. First runs the missed-response watchdog, then
+     *  sends the {@code keepalive} text command and records the send instant
+     *  for RTT calculation. A dead link — detected either by the watchdog
+     *  (no response for {@code keepaliveInterval × keepaliveMaxMissed}) or by
+     *  a send that throws — is handed back to the orchestrator via
+     *  {@link SessionOrchestrator#onConnectionDead(String)}, which tears the
+     *  session down and schedules a reconnect. */
     void sendOne()
     {
+        // ---- Missed-response watchdog -------------------------------------
+        // A half-open TCP connection (e.g. a Miniserver reboot that left no
+        // RST) never surfaces as onClose/onError: keepalive responses simply
+        // stop arriving while sends keep "succeeding" into a dead socket. If
+        // nothing has proven the link alive for keepaliveInterval ×
+        // keepaliveMaxMissed, declare it dead and reconnect.
+        var      ws       = config.miniserver().connection().ws();
+        Duration timeout  = ws.keepaliveInterval().multipliedBy( Math.max( 1, ws.keepaliveMaxMissed() ) );
+        // Proof of life = the MOST RECENT of (schedule armed, last response).
+        // armedAt is refreshed on every (re)connect; lastResponseAt can carry
+        // a STALE timestamp from the PREVIOUS session, so trusting it alone
+        // would false-trip the watchdog on the first tick after a reconnect
+        // (observed as a ~60 s reconnect loop). Take the max of the two.
+        Instant  lastResp = lastResponseAtRef.get();
+        Instant  armed    = armedAtRef.get();
+        Instant  since    = ( lastResp == null || ( armed != null && armed.isAfter( lastResp ) ) )
+                            ? armed : lastResp;
+        if ( since != null && Duration.between( since, Instant.now() ).compareTo( timeout ) > 0 )
+        {
+            LOG.warnf( "No keepalive response for > %s (last proof of life %s) — declaring link dead",
+                       timeout, since );
+            cancel();
+            orchestrator.get().onConnectionDead( "keepalive timeout (no response for > " + timeout + ")" );
+            return;
+        }
+
+        // ---- Normal tick --------------------------------------------------
         String  cmd = config.miniserver().cmd().keepalive();
         Instant now = Instant.now();
         try
@@ -201,10 +247,10 @@ public class KeepAliveScheduler
         }
         catch ( RuntimeException e )
         {
-            LOG.warnf( "KeepAlive send failed (%s) — cancelling schedule. "
-                       + "Will re-arm on the next MiniserverConnectedEvent.",
+            LOG.warnf( "KeepAlive send failed (%s) — link is down; tearing down for reconnect",
                        e.getMessage() );
             cancel();
+            orchestrator.get().onConnectionDead( "keepalive send failed: " + e.getMessage() );
         }
     }
 
@@ -235,6 +281,7 @@ public class KeepAliveScheduler
         lastSentAtRef.set( null );
         lastRttRef.set( null );
         lastResponseAtRef.set( null );
+        armedAtRef.set( null );
     }
 
     // -------------------------------------------------------------------------

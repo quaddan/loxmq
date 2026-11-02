@@ -6,7 +6,7 @@
     <title>loxmq — Logs</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- i18n FR/EN/DE. -->
-    <script src="/js/i18n.js"></script>
+    <script src="/js/i18n.js?v={cacheBust}"></script>
     <style>
         :root {
             --bg: #0e1116;
@@ -100,11 +100,23 @@
             padding: 0.45rem 1rem; font-size: 0.85rem; cursor: pointer;
             text-transform: uppercase; letter-spacing: 0.05em;
         }
-        .toolbar button:hover { filter: brightness(1.1); }
         .toolbar button.secondary {
             background: transparent; color: var(--fg-dim); border: 1px solid var(--border);
         }
-        .toolbar button.secondary:hover { color: var(--fg); border-color: var(--fg-dim); }
+        /* "Available log files" header actions — show/hide + delete old logs. */
+        .files-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap;
+                      margin-bottom: 1.25rem; }
+        .files-head h2 { margin: 0; }
+        .files-actions { display: flex; gap: 1rem; flex-wrap: wrap; }
+        /* Show/hide old = neutral action → accent blue (like dashboard).
+           Delete old = destructive → solid red (same as the dashboard reds). */
+        .files-actions button {
+            background: var(--accent); color: #000; border: 1px solid var(--accent);
+            border-radius: 4px; padding: 0.4rem 0.9rem; font-size: 0.75rem; cursor: pointer;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .files-actions button.danger { background: #b62324; color: #fff; border-color: #b62324; }
+        .files-actions button:disabled { opacity: 0.5; cursor: wait; }
         .toolbar .status {
             color: var(--fg-dim); font-size: 0.8rem; margin-left: auto;
             font-family: var(--mono);
@@ -122,7 +134,7 @@
         pre.viewer .lvl-trace { color: var(--fg-dim); opacity: 0.65; }
         pre.viewer .hl { background: rgba(88, 166, 255, 0.18); border-radius: 2px; }
         .files {
-            display: flex; flex-wrap: wrap; gap: 0.5rem;
+            display: flex; flex-wrap: wrap; gap: 1rem;
         }
         .files button.file {
             background: var(--bg); color: var(--fg);
@@ -131,7 +143,6 @@
             cursor: pointer; display: flex; flex-direction: column; align-items: flex-start;
             min-width: 12rem;
         }
-        .files button.file:hover { background: var(--bg-panel-hover); border-color: var(--fg-dim); }
         .files button.file.active { border-color: var(--accent); color: var(--accent); }
         .files button.file .meta {
             color: var(--fg-dim); font-size: 0.7rem; margin-top: 0.2rem;
@@ -158,6 +169,8 @@
     <!-- Shared responsive overrides — must load AFTER the inline <style> above
          so its mobile rules win by source order. See css/mobile.css. -->
     <link rel="stylesheet" href="/css/mobile.css?v=8">
+    <!-- Shared button hover/focus/press feedback — loaded last so it wins. -->
+    <link rel="stylesheet" href="/css/button-fx.css?v=1">
 </head>
 <body>
     <header>
@@ -168,9 +181,11 @@
         <nav class="tabs">
             <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
             <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/commands"  data-i18n="nav.commands">Commands</a>
             <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
             <a href="/users"     data-i18n="nav.users">Users</a>
             <a href="/logs"      data-i18n="nav.logs" class="active">Logs</a>
+            <a href="/system"    data-i18n="nav.system">System</a>
         </nav>
         <!-- Language combobox. -->
         <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
@@ -182,7 +197,13 @@
 
     <main>
         <section class="panel">
-            <h2 data-i18n="logs.section.files">Available log files</h2>
+            <div class="files-head">
+                <h2 data-i18n="logs.section.files">Available log files</h2>
+                <div class="files-actions">
+                    <button id="toggle-old" type="button">Show old logs</button>
+                    <button id="delete-old" type="button" class="danger" data-i18n="logs.btn.deleteOld">Delete old logs</button>
+                </div>
+            </div>
             <div class="files" id="files">
                 <span class="empty" data-i18n="common.loading">Loading files…</span>
             </div>
@@ -208,10 +229,10 @@
                 <label><span data-i18n="common.filter">Filter</span>
                     <input type="text" id="filter" placeholder="substring or regex (case-insensitive)">
                 </label>
-                <button id="refresh" type="button" data-i18n="logs.btn.refresh">Refresh</button>
-                <label style="margin-left: 0.5rem;">
-                    <input type="checkbox" id="auto-refresh"> auto (3s)
+                <label>
+                    <input type="checkbox" id="auto-refresh"> auto (1s)
                 </label>
+                <button id="refresh" type="button" style="margin-left: 0.5rem;" data-i18n="logs.btn.refresh">Refresh</button>
                 <span class="status" id="status"></span>
             </div>
             <pre class="viewer" id="viewer"></pre>
@@ -242,10 +263,17 @@
         const filterEl   = document.getElementById('filter');
         const refreshBtn = document.getElementById('refresh');
         const autoCbx    = document.getElementById('auto-refresh');
+        const toggleOldBtn = document.getElementById('toggle-old');
+        const deleteOldBtn = document.getElementById('delete-old');
 
         let currentFile = null;
         let abortCtl    = null;
         let autoTimer   = null;
+        let showOld     = false;   // hide rotated/archived logs by default
+        let rawLog      = '';      // accumulated raw text of the viewed file (bounded)
+        let logOffset   = 0;       // byte offset (EOF) consumed so far — incremental cursor
+        let tickCount   = 0;       // incremental ticks since the last file-list refresh
+        const MAX_CLIENT_LINES = 5000;   // cap the in-browser buffer
 
         function humanSize(n) {
             if (n < 1024) return n + ' B';
@@ -395,6 +423,14 @@
             return FILE_ORDER.indexOf(base) !== -1 ? ' file-' + base : '';
         }
 
+        // A rotated/archived log: a name.log followed by a .N or .YYYY-MM-DD suffix.
+        function isOldLog(name) {
+            return /\.log\.(\d{4}-\d{2}-\d{2}|\d+)$/.test(name);
+        }
+        function renderToggleLabel() {
+            toggleOldBtn.textContent = t(showOld ? 'logs.btn.hideOld' : 'logs.btn.showOld');
+        }
+
         async function loadFiles() {
             try {
                 const r = await fetch('/api/v1/logs');
@@ -405,7 +441,7 @@
                     return;
                 }
                 filesEl.innerHTML = '';
-                for (const f of sortFiles(data)) {
+                for (const f of sortFiles(data).filter(f => showOld || !isOldLog(f.name))) {
                     const btn = document.createElement('button');
                     btn.type = 'button';
                     btn.className = 'file' + fileColorClass(f.name) + (f.name === currentFile ? ' active' : '');
@@ -429,53 +465,98 @@
             loadContent();
         }
 
+        // Render the (bounded) raw buffer into the viewer with the active
+        // client-side filters + smart autoscroll. Strips one trailing newline so
+        // the byte-aligned buffer doesn't show a dangling blank line.
+        function renderLog() {
+            var disp = rawLog.endsWith('\n') ? rawLog.slice(0, -1) : rawLog;
+            // Smart auto-scroll : if the operator was at the bottom, follow the
+            // tail ; otherwise keep their scroll position so reading history
+            // isn't yanked back on every tick.
+            var wasAtBottom = isViewerAtBottom();
+            var savedScroll = viewerEl.scrollTop;
+            var html = applyClientSideFilters(disp);
+            viewerEl.innerHTML = html || '<span class="empty">No lines match the current filter.</span>';
+            viewerEl.scrollTop = wasAtBottom ? viewerEl.scrollHeight : savedScroll;
+            var total = disp ? disp.split('\n').length : 0;
+            statusEl.textContent = currentFile + ' · ' + total + ' lines · ' + humanTime(Date.now());
+        }
+
+        // Re-apply filters on the cached buffer (level / filter change) — no
+        // network round-trip.
+        function reapplyFilters() {
+            if (currentFile) renderLog();
+        }
+
+        // Cap the in-browser buffer to the last MAX_CLIENT_LINES lines.
+        function trimRawLog() {
+            var lines = rawLog.split('\n');
+            if (lines.length > MAX_CLIENT_LINES) {
+                rawLog = lines.slice(lines.length - MAX_CLIENT_LINES).join('\n');
+            }
+        }
+
+        // Full (re)load of the selected file — resets the incremental cursor.
+        // Used on file-select, manual Refresh and tail-size change.
         async function loadContent() {
             if (!currentFile) {
                 viewerEl.textContent = 'Select a log file above to view its contents.';
                 return;
             }
-            // Cancel any in-flight request.
             if (abortCtl) { abortCtl.abort(); }
             abortCtl = new AbortController();
-
-            const tail = Math.max(1, Math.min(5000, parseInt(tailEl.value, 10) || 500));
+            var tail = Math.max(1, Math.min(5000, parseInt(tailEl.value, 10) || 500));
             statusEl.textContent = 'loading ' + currentFile + ' (tail=' + tail + ')…';
             try {
-                const r = await fetch(
+                var r = await fetch(
                     '/api/v1/logs/' + encodeURIComponent(currentFile) + '?tail=' + tail,
                     { signal: abortCtl.signal });
                 if (!r.ok) {
-                    const txt = await r.text();
+                    var txt = await r.text();
                     viewerEl.textContent = 'HTTP ' + r.status + ' — ' + txt;
                     statusEl.textContent = 'error';
+                    rawLog = ''; logOffset = 0;
                     return;
                 }
-                const text = await r.text();
-                // Smart auto-scroll : remember if the operator was at the
-                // bottom BEFORE we replace the content. If yes, scroll to
-                // the new bottom after render ; otherwise preserve their
-                // scroll position so they can keep reading history without
-                // being yanked back by every auto-refresh tick.
-                const wasAtBottom = isViewerAtBottom();
-                const savedScroll = viewerEl.scrollTop;
-                const html = applyClientSideFilters(text);
-                viewerEl.innerHTML = html || '<span class="empty">No lines match the current filter.</span>';
-                if (wasAtBottom) {
-                    viewerEl.scrollTop = viewerEl.scrollHeight;
-                } else {
-                    // Best-effort preservation — the new content may
-                    // be longer/shorter than the old, but the absolute
-                    // offset stays close enough for the operator's
-                    // reading window not to jump.
-                    viewerEl.scrollTop = savedScroll;
-                }
-                const total = text ? text.split('\n').length : 0;
-                statusEl.textContent = currentFile + ' · ' + total + ' lines · refreshed ' + humanTime(Date.now());
+                var text = await r.text();
+                // tailFile() strips the trailing newline; restore it so future
+                // byte deltas (from the EOF offset below) append line-aligned.
+                rawLog = (text.length && !text.endsWith('\n')) ? text + '\n' : text;
+                logOffset = parseInt(r.headers.get('X-Log-Size') || '0', 10);
+                trimRawLog();
+                renderLog();
             } catch (e) {
                 if (e.name === 'AbortError') return;
                 viewerEl.textContent = 'fetch failed: ' + e.message;
                 statusEl.textContent = 'error';
             }
+        }
+
+        // Incremental tick (auto-refresh) — fetch ONLY the bytes appended since
+        // logOffset. Purely client-driven, so the backend does nothing when the
+        // page is closed. Re-syncs on rotation / large gaps (X-Log-Reset).
+        async function tickIncremental() {
+            if (!currentFile) return;
+            var tail = Math.max(1, Math.min(5000, parseInt(tailEl.value, 10) || 500));
+            try {
+                var r = await fetch('/api/v1/logs/' + encodeURIComponent(currentFile) +
+                                    '?since=' + logOffset + '&tail=' + tail);
+                if (!r.ok) return;   // transient — keep showing the last content
+                var text    = await r.text();
+                var reset   = r.headers.get('X-Log-Reset') === 'true';
+                var nextOff = parseInt(r.headers.get('X-Log-Size') || String(logOffset), 10);
+                var changed = false;
+                if (reset) {
+                    rawLog = (text.length && !text.endsWith('\n')) ? text + '\n' : text;
+                    changed = true;
+                } else if (text.length > 0) {
+                    rawLog += text;
+                    changed = true;
+                }
+                logOffset = nextOff;
+                if (changed) { trimRawLog(); renderLog(); }
+                if ((++tickCount % 5) === 0) loadFiles();   // refresh sidebar sizes ~every 5 s
+            } catch (e) { /* transient network blip — ignore, retry next tick */ }
         }
 
         // Refresh both the file list (size/mtime) and the content of the
@@ -491,7 +572,7 @@
 
         function startAutoRefresh() {
             stopAutoRefresh();
-            autoTimer = setInterval(refreshAll, 3000);
+            autoTimer = setInterval(tickIncremental, 1000);
         }
         function stopAutoRefresh() {
             if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
@@ -499,15 +580,32 @@
 
         refreshBtn.addEventListener('click', refreshAll);
         autoCbx.addEventListener('change', () => autoCbx.checked ? startAutoRefresh() : stopAutoRefresh());
-        levelEl.addEventListener('change', loadContent);
-        filterEl.addEventListener('input', () => {
-            // Re-apply client-side filters on the already-fetched buffer
-            // without round-tripping. The buffer is in the viewer's
-            // current text — but we don't keep raw text, so refetch.
-            // (Cheap : even at tail=5000 it's a sub-100ms HTTP round trip
-            // against localhost.)
-            if (currentFile) loadContent();
+        toggleOldBtn.addEventListener('click', () => {
+            showOld = !showOld;
+            renderToggleLabel();
+            loadFiles();
         });
+        deleteOldBtn.addEventListener('click', async () => {
+            if (!window.confirm(t('logs.confirm.deleteOld'))) return;
+            deleteOldBtn.disabled = true;
+            try {
+                const r = await fetch('/api/v1/logs/old', { method: 'DELETE' });
+                const j = await r.json().catch(() => ({}));
+                statusEl.textContent = r.ok ? (t('logs.status.deleted') + ': ' + (j.deleted || 0))
+                                            : t('logs.status.deleteFailed');
+            } catch (e) {
+                statusEl.textContent = t('logs.status.deleteFailed');
+            } finally {
+                deleteOldBtn.disabled = false;
+                loadFiles();
+            }
+        });
+        window.addEventListener('i18n:changed', renderToggleLabel);
+        renderToggleLabel();
+        // Level / filter changes re-render the cached buffer — no network round
+        // trip (we now keep the raw text in rawLog).
+        levelEl.addEventListener('change', reapplyFilters);
+        filterEl.addEventListener('input', reapplyFilters);
         tailEl.addEventListener('change', loadContent);
 
         window.addEventListener('pagehide', () => {

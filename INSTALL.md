@@ -2,8 +2,9 @@
 
 # Install & run
 
-A single, linear walkthrough — from a fresh clone to a running bridge,
-then to a supervised **production** deployment.
+Two routes in: the **Quick install** just below — download a prebuilt native
+binary and run it, no toolchain — or the full **build-from-source** walkthrough
+(§1 onward), from a fresh clone to a supervised **production** deployment.
 
 It covers **both** runtime forms (JVM fast-jar and native binary) and is
 the **source of truth for installation and deployment**. For adjacent
@@ -16,6 +17,10 @@ topics it links out rather than repeats:
 
 **Contents**
 
+- **[Quick install — prebuilt native binary](#quick-install--prebuilt-native-binary)** — download & run, no build toolchain *(recommended)*
+
+Full build-from-source walkthrough:
+
 1. [Prerequisites](#1-prerequisites)
 2. [Get the source](#2-get-the-source)
 3. [Configure](#3-configure)
@@ -25,6 +30,94 @@ topics it links out rather than repeats:
 7. [Deploy to production](#7-deploy-to-production)
 8. [Deploy with Docker (published image)](#8-deploy-with-docker-published-image)
 9. [First-run troubleshooting](#9-first-run-troubleshooting)
+
+---
+
+## Quick install — prebuilt native binary
+
+**The fastest route, and the recommended one on a `linux/amd64` host:** skip the
+build entirely and run the native binary published with every release. No clone,
+no JDK / Maven / GraalVM — just a reachable Miniserver + MQTT v5 broker (the
+runtime prerequisites in §1). **No TLS certificate is required** — it runs fine
+over plain HTTP (see **B** below).
+
+### A. Download and verify
+
+Every version tag publishes ready-to-run assets on its **GitHub Release**
+(`https://github.com/quaddan/loxmq/releases`). Grab them and check the checksums:
+
+```bash
+V=1.2.0                                         # the release you want
+base="https://github.com/quaddan/loxmq/releases/download/v$V"
+curl -fLO "$base/loxmq-$V-linux-amd64"          # native binary, prod profile baked in
+curl -fLO "$base/env.example"                   # configuration template
+curl -fLO "$base/loxmq-native.service"          # systemd unit
+curl -fLO "$base/SHA256SUMS.txt"                # checksums
+sha256sum -c SHA256SUMS.txt --ignore-missing    # must print "OK" for each file
+chmod +x "loxmq-$V-linux-amd64"
+```
+
+> **No native ARM binary is published** (the runner is compiled per-architecture
+> on an x86-64 builder). On ARM, use `loxmq-$V-jvm.zip` → §4, or the Docker
+> `:jvm` image → §8.
+
+### B. Configure
+
+The binary has the **prod profile baked in**: nothing site-specific is compiled
+in — every setting comes from **environment variables**. Copy `env.example`,
+then fill in your values. The authoritative key list is **§7.4**; the essentials:
+
+```properties
+# Where the gear lives — overrides the *.example.com defaults baked into prod:
+MINISERVER_HOST=192.168.0.12
+MINISERVER_PORT=443
+MQTT_BROKER_HOST=broker.lan
+MQTT_BROKER_PORT=8883
+# Credentials — Base64-wrapped  (printf '%s' 'value' | base64):
+LOXONE_MINISERVER_AUTH_USER=…
+LOXONE_MINISERVER_AUTH_PASSWORD=…
+LOXONE_TRANSPORT_SECURITY_CREDENTIALS_USER=…
+LOXONE_TRANSPORT_SECURITY_CREDENTIALS_PASSWORD=…
+```
+
+**TLS is optional — LoxMQ runs fine over plain HTTP** (the intended posture on a
+trusted LAN / VPN; there is no app-level auth — see ARCHITECTURE.md). The prod
+profile *by default* serves **HTTPS on 8443** and redirects bare HTTP to it, so
+out of the box it expects a certificate. To run **HTTP-only, with no certificate
+at all**, override the two prod TLS settings:
+
+```properties
+QUARKUS_HTTP_INSECURE_REQUESTS=enabled    # serve HTTP on 8080, no HTTPS redirect
+QUARKUS_HTTP_TLS_CONFIGURATION_NAME=      # empty → no HTTPS listener, no cert needed
+```
+
+LoxMQ then listens on **http://&lt;host&gt;:8080/** only — nothing else is needed.
+
+To serve **HTTPS** instead, leave those two unset and drop a `fullchain.pem` +
+`privkey.pem` pair into the certificate directory (`LOXONE_CERT_DIR`, default
+`/opt/loxmq/certs`) — see **§7.3**; a self-signed pair is fine for a first run.
+
+### C. Run — or install as a service
+
+For a one-off foreground run, load the env file and launch (include the two
+HTTP-only overrides from **B** in that file if you are not using TLS):
+
+```bash
+set -a ; . ./env ; set +a                       # your filled-in copy of env.example
+./loxmq-$V-linux-amd64
+```
+
+For a **supervised deployment**, there is nothing new to learn: follow **§7.5**
+verbatim — the *only* difference from the full §7 flow is that the binary is
+**downloaded here** instead of built in §5. The systemd unit, the
+`/etc/loxmq/env` file (§7.4), the TLS certs (§7.3) and the service user (§7.2)
+are identical.
+
+Then **verify it is running** with §6. Day-2 operations live in
+[RUNBOOK.md](./RUNBOOK.md).
+
+> **Prefer to build from source** (or need ARM)? Continue with the numbered
+> walkthrough below.
 
 ---
 
@@ -119,9 +212,14 @@ or by `-Dkey=value` on the command line.
 | `loxone.transport.topics.root`         | `iot/loxmq`              | —                            | MQTT topic root (`<root>/<app.id>/…`)                            |
 | `loxone.transport.topics.qos`          | `2`                      | —                            | MQTT QoS for published states                                    |
 | `loxone.boot.auto-start`               | `true`                   | `LOXONE_BOOT_AUTO_START`     | chain bootstrap → connect → transport at boot                    |
+| `loxone.miniserver.ws.keepalive-max-missed`                | `3`     | — | missed keepalive replies before the watchdog declares the link dead |
+| `loxone.miniserver.reconnect.out-of-service.initial-delay` | `PT30S` | — | wait after a Miniserver reboot / out-of-service (close-code `4009`) before the first retry |
+| `loxone.miniserver.reconnect.out-of-service.retry-interval`| `PT15S` | — | `OUT_OF_SERVICE` retry cadence until the Miniserver comes back |
+| `loxone.transport.security.inbound-queue-capacity`         | `256`   | — | bounded inbound-command dispatch queue; overflow → `DROP-QUEUE-FULL` + metric |
 | `quarkus.http.port` / `.ssl-port`      | `8080` / `8443`          | —                            | plain HTTP (dev) / HTTPS (staging, prod)                         |
 
-See **[FAQ.md](./FAQ.md)** → *Configuration* for the full knob list.
+See **[CONFIGURATION.md](./CONFIGURATION.md)** for the **full** knob list (every
+`loxone.*` and operator-relevant `quarkus.*` property, grouped by domain).
 
 ---
 
@@ -163,6 +261,11 @@ before switching to the native binary; in production it is launched by the
 The native binary is the **reference production artifact**: ~50 ms startup,
 ~50–80 MB RSS, fully standalone (no JVM required).
 
+> **Don't want to build it?** On `linux/amd64` you don't have to — the
+> [**Quick install**](#quick-install--prebuilt-native-binary) at the top
+> downloads the prebuilt `loxmq-<version>-linux-amd64` (prod profile baked in).
+> This section is for building the binary yourself.
+
 ### 5.1 Build the native image
 
 ```bash
@@ -172,7 +275,7 @@ The native binary is the **reference production artifact**: ~50 ms startup,
             -Dquarkus.native.container-build=true -DskipTests
 ```
 
-Binary: `target/loxmq-1.1.0-runner` (~88 MB). See **[NATIVE.md](./NATIVE.md)**
+Binary: `target/loxmq-1.2.0-runner` (~88 MB). See **[NATIVE.md](./NATIVE.md)**
 for the build internals and GraalVM caveats.
 
 > For a **production** image, build with `-Dquarkus.profile=prod` so the
@@ -184,10 +287,10 @@ for the build internals and GraalVM caveats.
 
 ```bash
 # Launch directly (no JVM):
-./target/loxmq-1.1.0-runner -Dquarkus.profile=dev
+./target/loxmq-1.2.0-runner -Dquarkus.profile=dev
 
 # Smoke test without contacting a real Miniserver (no auto bootstrap):
-./target/loxmq-1.1.0-runner -Dquarkus.profile=dev -Dloxone.boot.auto-start=false
+./target/loxmq-1.2.0-runner -Dquarkus.profile=dev -Dloxone.boot.auto-start=false
 ```
 
 Environment variables (`source .env`) and `-D…` properties are honoured
@@ -315,7 +418,7 @@ sudo chown root:loxmq /etc/loxmq/env && sudo chmod 0640 /etc/loxmq/env
 
 ```bash
 # Native binary, built with the prod profile (§5.1 with -Dquarkus.profile=prod):
-sudo install -o loxmq -g loxmq -m 0755 target/loxmq-1.1.0-runner /opt/loxmq/loxmq
+sudo install -o loxmq -g loxmq -m 0755 target/loxmq-1.2.0-runner /opt/loxmq/loxmq
 
 # systemd unit (native shown; use loxmq-jvm.service for the fast-jar):
 sudo cp service/loxmq-native.service /etc/systemd/system/

@@ -4,7 +4,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/quaddan/loxmq)](https://hub.docker.com/r/quaddan/loxmq)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/java-25%20LTS-orange.svg)](https://openjdk.org/projects/jdk/25/)
-[![Quarkus](https://img.shields.io/badge/quarkus-3.37.0-4695EB.svg)](https://quarkus.io)
+[![Quarkus](https://img.shields.io/badge/quarkus-3.40.1.1-4695EB.svg)](https://quarkus.io)
 [![MQTT](https://img.shields.io/badge/MQTT-v5-660066.svg)](https://docs.oasis-open.org/mqtt/mqtt/v5.0/mqtt-v5.0.html)
 
 # Production-grade bridge between a Loxone Miniserver and an MQTT v5 broker.
@@ -17,11 +17,13 @@ MQTT consumer.
 3. Routes inbound MQTT commands back to the Miniserver.
 4. Exposes a **responsive** web admin interface:
     - Dashboard (Miniserver Loxone and MQTT server connection infos and state).
+    - Send commands to Loxone controls (per-type command picker + UUID/state filter + live current-state readout).
     - Users and groups administration.
     - Schedules.
-    - Application logs.
-    - Check SD card health.
-    - Check if latest firmware is installed.
+    - Application logs (near-real-time incremental tail).
+    - Run Miniserver diagnostic commands (System / PLC / Config-Network / CAN bus) and read the raw JSON reply.
+    - Check SD card health — on demand.
+    - Check if latest firmware is installed — on demand.
 
 ---
 
@@ -97,7 +99,18 @@ home-automation tools. **`loxmq` bridges the gap**:
 - **Binary event-table decoding** for Loxone (Value / Text / DayTimer /
   Weather) and republishing on readable MQTT topics.
 - **Routing of MQTT commands** to the Miniserver (RSA + AES
-  encryption + send on the WebSocket).
+  encryption + send on the WebSocket), dispatched on a **bounded queue**
+  off the broker event loop (flood-safe; overflow → `DROP-QUEUE-FULL`).
+  A runtime **kill-switch** can disable inbound-command processing.
+- **Sending commands to any Loxone control** from the web UI or REST
+  (`POST /api/v1/commands`) — encrypted + sent on the WebSocket, direct to
+  the Miniserver. Sub-controls (e.g. the individual Dimmer / Switch outputs
+  of a LightControllerV2) are first-class, addressable by their `uuidAction`.
+- **Miniserver diagnostics from the browser** (`/system`): run a curated,
+  domain-grouped catalogue of `jdev` diagnostic commands (System / PLC /
+  Config-Network / CAN bus), read the raw JSON reply, and save it to a file.
+  A server-side allow-list restricts execution to the catalogue (no user /
+  token / crypto commands).
 - **Automatic reconnection** of both live links after a disconnect or
   network outage: the Miniserver WebSocket is rebuilt by a dedicated
   retry scheduler, the MQTT broker link by HiveMQ auto-reconnect
@@ -106,10 +119,23 @@ home-automation tools. **`loxmq` bridges the gap**:
   via a REST API and a web UI — without going through Loxone Config.
 - **Schedule management** (calMode 0-5: annual date, Easter offset,
   specific period, annual period, day of week).
+- **Live log viewer** (`/logs`): near-real-time tail via incremental polling
+  (zero backend cost when the page is closed), severity filter, and one-click
+  cleanup of rotated backups.
 - **SD-card health check**: the Miniserver's on-device SD-card
-  self-test (`jdev/sys/sdtest`) runs once per session; the dashboard
-  shows OK / ERROR plus the read/write throughput and usage report.
-- **Latest firmware version check.**
+  self-test (`jdev/sys/sdtest`) runs once per session **and on demand**
+  (dashboard button / `POST /api/v1/sdcard/test`); the dashboard shows
+  OK / ERROR plus the read/write throughput, usage report and a
+  "tested at" timestamp.
+- **Latest firmware version check** — automatic per session **and on
+  demand** (dashboard button / `POST /api/v1/firmware/check`).
+- **Real-time web UI**: dashboard (Miniserver + broker + token + health) and a
+  live-states page (`/states`, SSE-streamed, filterable by type / room /
+  category / name, per-UUID sparklines).
+- **Multilingual (FR / EN / DE) & responsive UI**: language auto-detected and
+  persisted; all seven pages adapt from phone to desktop.
+- **TLS on both sides**: Let's Encrypt wildcard on the binding's HTTP server;
+  automatic plain/secure switch to the Miniserver based on its `httpsStatus`.
 - **Native observability**: real-time dashboard, Prometheus metrics,
   MicroProfile health checks, structured logs.
 - **Industrialisable deployment**: standalone native binary
@@ -133,6 +159,10 @@ address, and user / room / control names) is blurred in these captures.
 
 ![loxmq — live states](assets/screenshots/live-states.webp)
 
+**Commands** (`/commands`) — send a command to a Loxone control (room → category → control cascade, incl. sub-controls) + inbound kill-switch.
+
+![loxmq — commands](assets/screenshots/commands.webp)
+
 **Schedules** (`/schedules`) — the Miniserver operating-mode calendar (full CRUD).
 
 ![loxmq — schedules](assets/screenshots/schedules.webp)
@@ -144,6 +174,10 @@ address, and user / room / control names) is blurred in these captures.
 **Logs** (`/logs`) — log-file viewer with severity filter and live tail.
 
 ![loxmq — logs](assets/screenshots/logs.webp)
+
+**System** (`/system`) — run a Miniserver diagnostic command (System / PLC / Config-Network / CAN bus) and read the raw JSON reply.
+
+![loxmq — system](assets/screenshots/system.webp)
 
 ---
 
@@ -271,13 +305,13 @@ handled.
 
 | Aspect               | Value                                                                                                                                                                                                                  |
 |----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Version              | **1.1.0** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
-| Stack                | Java 25 LTS · Quarkus 3.37.0 · `quarkus-hivemq-client` 2.5.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
+| Version              | **1.2.0** — see [CHANGELOG.md](./CHANGELOG.md)                                                                                                                                                                         |
+| Stack                | Java 25 LTS · Quarkus 3.40.1.1 · `quarkus-hivemq-client` 2.6.0 (Quarkiverse, native-friendly) · Hibernate Validator · Qute · Micrometer / Prometheus                                                                     |
 | MicroProfile         | Health · Metrics (Micrometer) · OpenAPI · Fault Tolerance · Config                                                                                                                                                     |
 | TLS                  | Wildcard `*.<domain>` Let's Encrypt on the binding's HTTP server side. On the Miniserver side: automatic resolution based on `httpsStatus` returned by `jdev/cfg/apiKey` (transparent plain/secure switch).            |
 | Packaging            | **JVM fast-jar** (~2 s startup) + **native binary** (~88 MB, ~50 ms startup, 50-80 MB RSS, standalone) + **two mutually exclusive systemd units** `loxmq-jvm.service` / `loxmq-native.service` (recommended for prod). |
 | Internationalisation | Multilingual UI **FR / EN / DE** with combobox in the header. Automatic detection on `navigator.language`, override persisted in `localStorage`.                                                                       |
-| Responsive           | All five pages (dashboard, states, schedules, users, logs) adapt to phones and narrow desktop windows — collapsing grids, scrollable tab bar and tables, no horizontal overflow (`css/mobile.css`).                    |
+| Responsive           | All seven pages (dashboard, states, commands, schedules, users, logs, system) adapt to phones and narrow desktop windows — collapsing grids, scrollable tab bar and tables, no horizontal overflow (`css/mobile.css`).           |
 | Tests                | Unit tests (`./mvnw test`) + Integration tests (`./mvnw verify -Pintegration`) against packaged artifact, including Testcontainers Mosquitto.                                                                          |
 
 ---
@@ -298,9 +332,12 @@ handled.
 - **JWT tokens**: automatic refresh every 24 h, `killtoken` at
   shutdown, management of rights `4095` (bitmask user-mgmt + op-modes
     + visu).
-- **Keep-alive** with RTT measurement (Micrometer timer).
+- **Keep-alive** with RTT measurement (Micrometer timer) + a
+  missed-response **watchdog** that declares a silent link dead.
 - **Reconnect** with exponential backoff + jitter, policy per
-  Loxone close-code (4003-4008).
+  Loxone close-code (4003-4008). A Miniserver reboot / out-of-service
+  (close-code `4009`, `OUT_OF_SERVICE` policy) waits 30 s then retries
+  every 15 s until it comes back.
 
 ### 2. Decoding and republishing
 
@@ -330,15 +367,21 @@ handled.
 - **Response routing**: the Miniserver's reply text frame is
   republished on `…/command_response` with UUID correlation.
 - **Inbound security**: drop messages `retained=true` (avoids
-  replay on CONNACK), cap payload size 4 KB.
+  replay on CONNACK), cap payload size 4 KB, and dispatch on a
+  **bounded single-thread queue** off the HiveMQ event loop
+  (`inbound-queue-capacity`, overflow → `DROP-QUEUE-FULL` + metric).
+- **Runtime kill-switch**: `GET`/`PUT /api/v1/commands/inbound` (and the
+  toggle at the top of `/commands`) enable/disable inbound-command
+  processing on the fly; while off, received commands are dropped
+  (`DROP-DISABLED`) instead of forwarded.
 
 ### 4. Administration
 
 - **REST API** `/api/v1/*` for CRUD users / groups /
   schedules. See endpoint table below.
-- **Web UI**: dashboard + pages `/states` (live), `/schedules`,
-  `/users`, `/logs`. Vanilla JS (no framework) + HTMX + Qute.
-- **Responsive**: all five pages adapt to phones and narrow desktop
+- **Web UI**: dashboard + pages `/states` (live), `/commands`,
+  `/schedules`, `/users`, `/logs`, `/system`. Vanilla JS (no framework) + HTMX + Qute.
+- **Responsive**: all seven pages adapt to phones and narrow desktop
   windows — collapsing grids, scrollable tab bar, every wide table in a
   horizontally scrollable frame, no viewport overflow (`css/mobile.css`).
 - **Auto-refresh 30 s** + Server-Sent Events
@@ -362,8 +405,11 @@ handled.
 - **Prometheus**: `/q/metrics` — counters publishes/drops/reconnects,
   gauges session state / broker, timers handshake / RTT keepalive.
 - **Logs**: xterm-256 color console format + emojis per level,
-  rotation by date + auto-purge 30 d, separate files
-  `application.log` / `commands.log` / `error.log` / `warn.log`.
+  rotation + auto-purge, separate files `application.log` /
+  `commands.log` / `error.log` / `warn.log` / `audit.log`. The `/logs`
+  viewer tails **near-real-time** (1 s, incremental delta fetch — zero
+  backend cost when the page is closed) and can show/delete rotated
+  backups (`DELETE /api/v1/logs/old`).
 
 ---
 
@@ -375,16 +421,22 @@ handled.
 |--------------|----------------------------------------------------------------------------------------------------|
 | `/`          | Dashboard — Miniserver + broker + bootstrap + health state                                         |
 | `/states`    | Live states in real time — SSE table + cascade dropdowns + per-UUID sparklines                     |
+| `/commands`  | Send a command to a Loxone control — room→category→control cascade (incl. sub-controls) + per-type command picker ([coverage](./docs/control-command-coverage.md)) + UUID/state filter + live current-state readout + inbound kill-switch |
 | `/schedules` | Operating-mode calendar CRUD — 5 calModes (annual date / Easter / specific / annual / day of week) |
 | `/users`     | Miniserver users + groups — full CRUD — table + 5-tab detail modal                                 |
 | `/logs`      | Server log viewer — min-level filter + auto-refresh + smart scroll                                 |
+| `/system`    | Run a Miniserver diagnostic command — curated catalogue grouped by domain (System / PLC / Config-Network / CAN bus) + raw JSON reply + save-to-file |
 
 ### REST `/api/v1/*`
 
 | Path                           | What                                                              |
 |--------------------------------|-------------------------------------------------------------------|
 | `/api/v1/state`                | GET — JSON snapshot of state (config + runtime)                   |
-| `/api/v1/state/stream`         | GET — Server-Sent Events (session / MQTT transitions)             |
+| `/api/v1/state/stream`         | GET — Server-Sent Events (session / MQTT transitions + state events) |
+| `/api/v1/state/current`        | GET — last known value per state-UUID (read-model for `/commands`) |
+| `/api/v1/commands`             | POST `{uuid, command}` — encrypt + send a command on the WS (direct to Miniserver) |
+| `/api/v1/commands/inbound`     | GET / PUT `{enabled}` — read / toggle inbound (MQTT) command processing |
+| `/api/v1/system-command`       | POST `{command}` — run a catalogued `jdev` diagnostic command (HTTPS admin channel); returns the raw `LL` reply |
 | `/api/v1/bootstrap`            | POST — load public key + miniserver identity                      |
 | `/api/v1/connect`              | POST — opens the WS session + handshake up to RUNNING             |
 | `/api/v1/disconnect`           | POST — closes the WS session cleanly                              |
@@ -393,6 +445,10 @@ handled.
 | `/api/v1/token/kill`           | POST — invalidates the JWT and resets the session                 |
 | `/api/v1/transport/connect`    | POST — connects the MQTT client, publishes `online` on `…/status` |
 | `/api/v1/transport/disconnect` | POST — publishes `offline` then closes                            |
+| `/api/v1/sdcard/test`          | POST — run the SD-card self-test now, returns the fresh result    |
+| `/api/v1/firmware/check`       | POST — check the latest available firmware now                    |
+| `/api/v1/logs`                 | GET — list log files; `GET /{name}?tail=N` tail, `?since=<offset>` incremental delta |
+| `/api/v1/logs/old`             | DELETE — remove rotated log backups (active logs kept)            |
 | `/api/v1/schedules`            | GET / POST / PUT / DELETE — calendar schedules CRUD               |
 | `/api/v1/users`                | GET / POST — list + create user                                   |
 | `/api/v1/users/{uuid}`         | GET / PUT / DELETE — detail + patch metadata + delete             |
@@ -465,12 +521,19 @@ diagnostics.
 - **[INSTALL.md](./INSTALL.md)** — from a fresh clone to a running bridge:
   configure, then build & run the **JVM fast-jar** or the **native
   binary**, with a health-check checklist.
+- **[CONFIGURATION.md](./CONFIGURATION.md)** — the **full** configuration
+  reference: every `loxone.*` and operator-relevant `quarkus.*` knob, grouped by
+  domain, with default, env-var override, and meaning.
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** — design decisions,
   package structure, MicroProfile choices, reconnect asymmetries,
   native-image strategy, pitfalls already encountered and resolved.
 - **[ADMIN.md](./ADMIN.md)** — the admin surface (Users · Schedules ·
   Logs): its design (request/reply correlation, audit log, V17 quirks)
   and the operator guide (status chips, group membership, logs viewer).
+- **[docs/control-command-coverage.md](./docs/control-command-coverage.md)** —
+  which Loxone control types the `/commands` page drives with predefined
+  commands, which are read-only, and which fall back to the free-form field
+  (with the reason for each) — curated from the Structure-File.
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** — how to set up your
   workstation, run the tests, propose a pull request.
 - **[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)** — Contributor Covenant.

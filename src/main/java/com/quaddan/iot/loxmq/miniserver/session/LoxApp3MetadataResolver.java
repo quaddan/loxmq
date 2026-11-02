@@ -107,18 +107,61 @@ public class LoxApp3MetadataResolver
 
     /**
      * Compact info to pre-populate + cascade-filter the dropdowns of the
-     * States live panel. No format / unit here (used for filters, not for
-     * value display).
+     * States live panel AND the Commands page. No format / unit here.
+     *
+     * <p>{@code type} is the Loxone control type (e.g. {@code "Switch"},
+     * {@code "Jalousie"}) — drives the per-type command list on the Commands
+     * page. {@code uuid} is the control's {@code uuidAction} (the UUID a
+     * command is addressed to), falling back to the control's own UUID key
+     * when {@code uuidAction} is absent.
      */
     public record ControlInfo(String controlName,
                               String roomName,
-                              String catName)
+                              String catName,
+                              String type,
+                              String uuid)
     {
+    }
+
+    /** A named state of a control: its Loxone state name (e.g.
+     *  {@code "position"}, {@code "active"}) + the state-UUID that carries
+     *  its live value. */
+    public record StateRef(String name, String uuid)
+    {
+    }
+
+    /**
+     * Richer, command-oriented view of the topology, used by the Commands page.
+     * Unlike {@link #topology()} (top-level controls only — for /states), this
+     * surface ALSO exposes {@code subControls} (e.g. the individual Dimmer /
+     * Switch outputs of a {@code LightControllerV2}) as first-class selectable
+     * controls, and carries, per control, the list of its named
+     * {@link StateRef states}.
+     *
+     * <p>From {@code controlStates} the page derives both:
+     * <ul>
+     *   <li>a <strong>state-UUID → command-target UUID</strong> lookup so a
+     *       pasted <em>state</em> UUID (what MQTT and /states surface) resolves
+     *       to the {@code uuidAction} a command is addressed to;</li>
+     *   <li>the list of a selected control's states to display their current
+     *       value (fetched from {@code GET /api/v1/state/current}).</li>
+     * </ul>
+     *
+     * @param topology      controls (top-level + sub-controls) + room / cat lists
+     * @param controlStates command-target UUID → its named states
+     */
+    public record CommandSurface(Topology topology, Map< String, List< StateRef > > controlStates)
+    {
+        public static CommandSurface empty() { return new CommandSurface( Topology.empty(), Map.of() ); }
     }
 
     /** Topology snapshot updated in the same pass as {@link #stateUuidToControl}
      *  on reparse. Same consistency guarantee: volatile single-reference swap. */
     private volatile Topology topology = Topology.empty();
+
+    /** Command-oriented surface (topology incl. sub-controls + state index).
+     *  Same volatile single-reference swap as {@link #topology}. */
+    private volatile CommandSurface commandSurface = CommandSurface.empty();
 
     /**
      * Operating modes index — id (int) → display name. Read from the
@@ -149,10 +192,12 @@ public class LoxApp3MetadataResolver
         try
         {
             Map< String, ControlMetadata > next         = parse( json.get() );
-            Topology                       nextTopology = computeTopology( next );
+            Topology                       nextTopology = computeTopology( json.get() );
+            CommandSurface                 nextSurface  = computeCommandSurface( json.get() );
             Map< Integer, String >         nextOpModes  = parseOperatingModes( json.get() );
             // Swap order: map first (used by the hot path resolve()),
             // then topology (only used by the /states page on load),
+            // then the command surface (only used by the /commands page),
             // then operatingModes (only used by the /schedules page).
             // No cross-field atomicity guarantee, but the order minimizes
             // the window where resolve() sees the new map and /states
@@ -161,12 +206,15 @@ public class LoxApp3MetadataResolver
             // — auto-resolved on the next page F5 refresh).
             stateUuidToControl = next;
             topology           = nextTopology;
+            commandSurface     = nextSurface;
             operatingModes     = nextOpModes;
-            LOG.infof( "LoxApp3 metadata indexed: %d state UUIDs mapped to controls (rooms=%d, cats=%d, unique controls=%d, opModes=%d)",
+            LOG.infof( "LoxApp3 metadata indexed: %d state UUIDs mapped to controls (rooms=%d, cats=%d, unique controls=%d, command controls incl. sub=%d, command controls-with-states=%d, opModes=%d)",
                        ( Integer ) next.size(),
                        ( Integer ) nextTopology.rooms().size(),
                        ( Integer ) nextTopology.categories().size(),
                        ( Integer ) nextTopology.controls().size(),
+                       ( Integer ) nextSurface.topology().controls().size(),
+                       ( Integer ) nextSurface.controlStates().size(),
                        ( Integer ) nextOpModes.size() );
         }
         catch ( Exception e )
@@ -189,6 +237,17 @@ public class LoxApp3MetadataResolver
     }
 
     /**
+     * Current snapshot of the command surface — topology including
+     * sub-controls plus the state-UUID → command-target index. Used by
+     * {@code CommandsPageResource}. Returns {@link CommandSurface#empty()}
+     * until the first reparse happens.
+     */
+    public CommandSurface commandSurface()
+    {
+        return commandSurface;
+    }
+
+    /**
      * Current snapshot of the operating modes. Numeric id → display
      * name configured by the operator in Loxone Config. Returns
      * an empty map until the first reparse happens — the Schedules page
@@ -200,36 +259,191 @@ public class LoxApp3MetadataResolver
     }
 
     /**
-     * Build the Topology snapshot from the state-UUID → metadata map.
-     * Deduplicate controls (a Control often has multiple state-UUIDs
-     * pointing to the same ControlMetadata — we keep a single entry per
-     * (controlName, roomName, catName) tuple), lexicographic sort of
-     * rooms and categories.
+     * Build the Topology snapshot directly from the {@code controls} block of
+     * the LoxAPP3 (one entry per control, carrying its {@code type} +
+     * command-target {@code uuid}) — unlike the state index, which is keyed by
+     * state-UUID. Walks the same JSON the state parse does (cheap; only on a
+     * RUNNING transition, same pattern as {@link #parseOperatingModes}).
+     * Lexicographic sort of rooms + categories; controls sorted by name.
+     *
+     * <p>Dedup key includes the UUID so EVERY distinct control is present —
+     * the Commands page's UUID filter can then locate any control, even two
+     * sharing the same (name, room, cat).
      */
-    private static Topology computeTopology( Map< String, ControlMetadata > index )
+    Topology computeTopology( String loxApp3Json ) throws Exception
     {
-        TreeSet< String > rooms = new TreeSet<>();    // natural lex sort
-        TreeSet< String > cats  = new TreeSet<>();
-        // Dedup controls: a Set lexicographically ordered by name + an
-        // intermediate Map to avoid creating the same ControlInfo twice.
-        // Loxone-controls often share multiple state-UUIDs (e.g.
-        // "active" + "value" + "min" + "max" for a thermostat) → we
-        // deduplicate on the (name, room, cat) tuple.
+        JsonNode              root      = jsonMapper.readTree( loxApp3Json );
+        Map< String, String > roomNames = readNameMap( root.path( "rooms" ) );
+        Map< String, String > catNames  = readNameMap( root.path( "cats" ) );
+
+        TreeSet< String >                              rooms    = new TreeSet<>();    // natural lex sort
+        TreeSet< String >                              cats     = new TreeSet<>();
         java.util.LinkedHashMap< String, ControlInfo > controls = new java.util.LinkedHashMap<>();
-        for ( ControlMetadata m : index.values() )
+
+        JsonNode controlsNode = root.path( "controls" );
+        if ( controlsNode.isObject() )
         {
-            rooms.add( m.roomName() );
-            cats.add( m.catName() );
-            String key = m.controlName() + "|" + m.roomName() + "|" + m.catName();
-            controls.putIfAbsent( key, new ControlInfo( m.controlName(), m.roomName(), m.catName() ) );
+            for ( Map.Entry< String, JsonNode > entry : controlsNode.properties() )
+            {
+                JsonNode control = entry.getValue();
+                if ( !control.isObject() )
+                { continue; }
+
+                String name = control.path( "name" ).asText( "" );
+                String room = roomNames.getOrDefault( control.path( "room" ).asText( "" ), "" );
+                String cat  = catNames.getOrDefault( control.path( "cat" ).asText( "" ), "" );
+                String type = control.path( "type" ).asText( "" );
+                // Command target: uuidAction when present, else the control's own UUID key.
+                String uuid = control.path( "uuidAction" ).asText( entry.getKey() );
+
+                name = name.isEmpty() ? "UNKNOWN" : name;
+                room = room.isEmpty() ? "UNKNOWN" : room;
+                cat  = cat.isEmpty() ? "UNKNOWN" : cat;
+                type = type.isEmpty() ? "UNKNOWN" : type;
+
+                rooms.add( room );
+                cats.add( cat );
+                String key = name + "|" + room + "|" + cat + "|" + uuid;
+                controls.putIfAbsent( key, new ControlInfo( name, room, cat, type, uuid ) );
+            }
         }
-        // Sort controls by name for ops consistency.
+
         List< ControlInfo > sortedControls = new ArrayList<>( controls.values() );
         sortedControls.sort( ( a, b ) -> a.controlName().compareToIgnoreCase( b.controlName() ) );
         return new Topology(
                 List.copyOf( rooms ),
                 List.copyOf( cats ),
                 List.copyOf( sortedControls ) );
+    }
+
+    /**
+     * Build the command-oriented {@link CommandSurface} for the Commands page.
+     * Like {@link #computeTopology} but, crucially, it <strong>recurses into
+     * {@code subControls}</strong> so nested commandable controls (e.g. each
+     * Dimmer / Switch output of a {@code LightControllerV2}) become selectable
+     * entries addressed by their own {@code uuidAction} — exactly the
+     * {@code jdev/sps/io/<uuidAction>/<cmd>} form the send path already uses
+     * (uuidAction may carry a channel suffix like {@code /AI2}). It also builds
+     * the <strong>state-UUID → command-target UUID</strong> index so the page
+     * can resolve a pasted state UUID (the kind MQTT and /states expose) to the
+     * control that command is sent to.
+     *
+     * <p>Sub-control names are prefixed with the parent name
+     * ({@code "Parent › Child"}) for disambiguation; room / category are
+     * inherited from the enclosing top-level control (sub-controls carry none).
+     *
+     * <p>{@link #topology()} and {@link #parse()} are deliberately left
+     * untouched: the /states page keeps its top-level-only view and enrichment.
+     */
+    CommandSurface computeCommandSurface( String loxApp3Json ) throws Exception
+    {
+        JsonNode              root      = jsonMapper.readTree( loxApp3Json );
+        Map< String, String > roomNames = readNameMap( root.path( "rooms" ) );
+        Map< String, String > catNames  = readNameMap( root.path( "cats" ) );
+
+        TreeSet< String >                              rooms         = new TreeSet<>();
+        TreeSet< String >                              cats          = new TreeSet<>();
+        java.util.LinkedHashMap< String, ControlInfo > controls      = new java.util.LinkedHashMap<>();
+        Map< String, List< StateRef > >                controlStates = new HashMap<>();
+
+        JsonNode controlsNode = root.path( "controls" );
+        if ( controlsNode.isObject() )
+        {
+            for ( Map.Entry< String, JsonNode > entry : controlsNode.properties() )
+            {
+                JsonNode control = entry.getValue();
+                if ( !control.isObject() )
+                { continue; }
+
+                String room = roomNames.getOrDefault( control.path( "room" ).asText( "" ), "" );
+                String cat  = catNames.getOrDefault( control.path( "cat" ).asText( "" ), "" );
+                room = room.isEmpty() ? "UNKNOWN" : room;
+                cat  = cat.isEmpty() ? "UNKNOWN" : cat;
+                rooms.add( room );
+                cats.add( cat );
+
+                addControl( controls, controlStates, entry.getKey(), control, room, cat, "" );
+            }
+        }
+
+        List< ControlInfo > sortedControls = new ArrayList<>( controls.values() );
+        sortedControls.sort( ( a, b ) -> a.controlName().compareToIgnoreCase( b.controlName() ) );
+        Topology topo = new Topology(
+                List.copyOf( rooms ),
+                List.copyOf( cats ),
+                List.copyOf( sortedControls ) );
+        return new CommandSurface( topo, Map.copyOf( controlStates ) );
+    }
+
+    /**
+     * Add one control (then, recursively, its {@code subControls}) to the
+     * command surface: one {@link ControlInfo} + the list of its named
+     * {@link StateRef states}, keyed by the control's command-target UUID.
+     *
+     * @param namePrefix parent display name for a sub-control ({@code ""} at
+     *                   the top level) — produces {@code "Parent › Child"}
+     */
+    private static void addControl( Map< String, ControlInfo > controls,
+                                    Map< String, List< StateRef > > controlStates,
+                                    String key, JsonNode control,
+                                    String room, String cat, String namePrefix )
+    {
+        String name = control.path( "name" ).asText( "" );
+        name = name.isEmpty() ? "UNKNOWN" : name;
+        String display = namePrefix.isEmpty() ? name : namePrefix + " › " + name;
+        String type = control.path( "type" ).asText( "" );
+        type = type.isEmpty() ? "UNKNOWN" : type;
+        // Command target: uuidAction when present, else the control's own UUID key.
+        String uuid = control.path( "uuidAction" ).asText( key );
+
+        String ckey = display + "|" + room + "|" + cat + "|" + uuid;
+        controls.putIfAbsent( ckey, new ControlInfo( display, room, cat, type, uuid ) );
+
+        // Collect this control's named states (each carries a state-UUID that
+        // delivers its live value). A state value may be a single UUID or an
+        // array of them — index each under the same state name.
+        JsonNode states = control.path( "states" );
+        if ( states.isObject() )
+        {
+            List< StateRef > refs = new ArrayList<>();
+            for ( Map.Entry< String, JsonNode > s : states.properties() )
+            {
+                String   sname = s.getKey();
+                JsonNode v     = s.getValue();
+                if ( v.isTextual() )
+                {
+                    refs.add( new StateRef( sname, v.asText() ) );
+                }
+                else if ( v.isArray() )
+                {
+                    for ( JsonNode item : v )
+                    {
+                        if ( item.isTextual() )
+                        { refs.add( new StateRef( sname, item.asText() ) ); }
+                    }
+                }
+            }
+            if ( !refs.isEmpty() )
+            {
+                controlStates.merge( uuid, refs, ( a, b ) ->
+                {
+                    a.addAll( b );
+                    return a;
+                } );
+            }
+        }
+
+        // Recurse into sub-controls (inherit parent room / cat; prefix name).
+        JsonNode subControls = control.path( "subControls" );
+        if ( subControls.isObject() )
+        {
+            for ( Map.Entry< String, JsonNode > sub : subControls.properties() )
+            {
+                if ( !sub.getValue().isObject() )
+                { continue; }
+                addControl( controls, controlStates, sub.getKey(), sub.getValue(), room, cat, display );
+            }
+        }
     }
 
     /**
@@ -284,49 +498,72 @@ public class LoxApp3MetadataResolver
                 if ( !control.isObject() )
                 { continue; }
 
-                String controlName = control.path( "name" ).asText( "" );
-                String roomUuid    = control.path( "room" ).asText( "" );
-                String catUuid     = control.path( "cat" ).asText( "" );
-                String roomName    = roomNames.getOrDefault( roomUuid, "" );
-                String catName     = catNames.getOrDefault( catUuid, "" );
-                String format      = control.path( "details" ).path( "format" ).asText( "" );
-                String unit        = extractUnit( format );
+                String roomName = roomNames.getOrDefault( control.path( "room" ).asText( "" ), "" );
+                String catName  = catNames.getOrDefault( control.path( "cat" ).asText( "" ), "" );
+                // Walk the control AND its sub-controls (which inherit the
+                // parent's room / cat but keep their own name + format) so
+                // every state-UUID — including a LightControllerV2's Dimmer
+                // outputs one level down — resolves to a named, formatted
+                // control rather than UNKNOWN.
+                indexStatesRecursive( index, control, roomName, catName );
+            }
+        }
 
-                ControlMetadata meta = new ControlMetadata(
-                        controlName.isEmpty() ? "UNKNOWN" : controlName,
-                        roomName.isEmpty() ? "UNKNOWN" : roomName,
-                        catName.isEmpty() ? "UNKNOWN" : catName,
-                        format,
-                        unit );
+        return Map.copyOf( index );    // immutable snapshot for the swap
+    }
 
-                JsonNode states = control.path( "states" );
-                if ( states.isObject() )
+    /** Index every state-UUID of {@code control} (and, recursively, its
+     *  {@code subControls}) to its {@link ControlMetadata}. Sub-controls
+     *  inherit the enclosing control's room / category (they carry none) but
+     *  keep their own name + {@code details.format}. */
+    private static void indexStatesRecursive( Map< String, ControlMetadata > index,
+                                              JsonNode control, String roomName, String catName )
+    {
+        String controlName = control.path( "name" ).asText( "" );
+        String format      = control.path( "details" ).path( "format" ).asText( "" );
+        String unit        = extractUnit( format );
+
+        ControlMetadata meta = new ControlMetadata(
+                controlName.isEmpty() ? "UNKNOWN" : controlName,
+                roomName.isEmpty() ? "UNKNOWN" : roomName,
+                catName.isEmpty() ? "UNKNOWN" : catName,
+                format,
+                unit );
+
+        JsonNode states = control.path( "states" );
+        if ( states.isObject() )
+        {
+            for ( Map.Entry< String, JsonNode > s : states.properties() )
+            {
+                // The state-UUID may be a String OR an Array of strings
+                // (a single Control can have multiple state-UUIDs for the
+                // same state name — observed on "active" for some HVAC
+                // controls). Index both flavours.
+                JsonNode v = s.getValue();
+                if ( v.isTextual() )
                 {
-                    for ( Map.Entry< String, JsonNode > s : states.properties() )
+                    index.put( v.asText(), meta );
+                }
+                else if ( v.isArray() )
+                {
+                    for ( JsonNode item : v )
                     {
-                        // The state-UUID may be a String OR an Array of strings
-                        // (a single Control can have multiple state-UUIDs for the
-                        // same state name — observed on "active" for some HVAC
-                        // controls). Index both flavours.
-                        JsonNode v = s.getValue();
-                        if ( v.isTextual() )
-                        {
-                            index.put( v.asText(), meta );
-                        }
-                        else if ( v.isArray() )
-                        {
-                            for ( JsonNode item : v )
-                            {
-                                if ( item.isTextual() )
-                                { index.put( item.asText(), meta ); }
-                            }
-                        }
+                        if ( item.isTextual() )
+                        { index.put( item.asText(), meta ); }
                     }
                 }
             }
         }
 
-        return Map.copyOf( index );    // immutable snapshot for the swap
+        JsonNode subControls = control.path( "subControls" );
+        if ( subControls.isObject() )
+        {
+            for ( Map.Entry< String, JsonNode > sub : subControls.properties() )
+            {
+                if ( sub.getValue().isObject() )
+                { indexStatesRecursive( index, sub.getValue(), roomName, catName ); }
+            }
+        }
     }
 
     /**

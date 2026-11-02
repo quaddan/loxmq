@@ -35,6 +35,10 @@ public class UsersPageResource
         public static native TemplateInstance users();
     }
 
+    /**
+     * {@code GET /users} — renders the Users page HTML shell. No template
+     * parameters; the table is populated client-side via REST.
+     */
     @GET
     public TemplateInstance get()
     {

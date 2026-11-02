@@ -6,7 +6,7 @@
     <title>loxmq — States live</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- i18n FR/EN/DE. -->
-    <script src="/js/i18n.js"></script>
+    <script src="/js/i18n.js?v={cacheBust}"></script>
     <style>
         :root {
             --bg: #0e1116;
@@ -157,9 +157,7 @@
             font-size: 0.85rem;
             cursor: pointer;
         }
-        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
         button.btn-clear { background: #b62324; color: #fff; border-color: #b62324; }
-        button.btn-clear:hover { background: #cf2e2e; border-color: #cf2e2e; color: #fff; }
         table.states {
             width: 100%;
             border-collapse: collapse;
@@ -242,6 +240,8 @@
     <!-- Shared responsive overrides — must load AFTER the inline <style> above
          so its mobile rules win by source order. See css/mobile.css. -->
     <link rel="stylesheet" href="/css/mobile.css?v=8">
+    <!-- Shared button hover/focus/press feedback — loaded last so it wins. -->
+    <link rel="stylesheet" href="/css/button-fx.css?v=1">
 </head>
 <body>
     <header>
@@ -252,9 +252,11 @@
         <nav class="tabs">
             <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
             <a href="/states"    data-i18n="nav.states" class="active">States live</a>
+            <a href="/commands"  data-i18n="nav.commands">Commands</a>
             <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
             <a href="/users"     data-i18n="nav.users">Users</a>
             <a href="/logs"      data-i18n="nav.logs">Logs</a>
+            <a href="/system"    data-i18n="nav.system">System</a>
         </nav>
         <!-- Language combobox. -->
         <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">

@@ -1,0 +1,75 @@
+{
+  "_comment": "Loxone control type -> valid command tokens, curated STRICTLY from docs/loxone/1700_Structure-File.pdf (V17.0) per-control 'Commands' sections; type keys verified against a real LoxAPP3.json. NO invention. Entries are {cmd} (fixed) or {cmd:'...{v}...', value:{type,min,max,label}} (single NUMERIC value — the UI value field is numeric only). Multi-argument commands (hsv/lumitech/override/setMoods/selectedcontrols/entryList...) and text/date/time arguments are intentionally omitted — use the free-form command field for those. Types absent from this map, or with [], expose only the free-form field (read-only sensors like InfoOnly* carry no commands). Full type coverage matrix (supported / read-only / free-form-only, with reasons): docs/control-command-coverage.md.",
+
+  "Switch":            [ {"cmd":"on"}, {"cmd":"off"} ],
+  "Pushbutton":        [ {"cmd":"pulse"}, {"cmd":"on"}, {"cmd":"off"} ],
+  "TimedSwitch":       [ {"cmd":"on"}, {"cmd":"off"}, {"cmd":"pulse"} ],
+  "TextInput":         [ {"cmd":"on"}, {"cmd":"off"}, {"cmd":"pulse"} ],
+
+  "Dimmer":            [ {"cmd":"on"}, {"cmd":"off"},
+                         {"cmd":"{v}", "value":{"type":"number","min":0,"max":100,"label":"position"}} ],
+
+  "Slider":            [ {"cmd":"{v}", "value":{"type":"number","label":"value"}} ],
+  "ValueSelector":     [ {"cmd":"{v}", "value":{"type":"number","label":"value"}} ],
+
+  "Jalousie":          [ {"cmd":"FullUp"}, {"cmd":"FullDown"},
+                         {"cmd":"up"}, {"cmd":"UpOff"}, {"cmd":"down"}, {"cmd":"DownOff"} ],
+
+  "Gate":              [ {"cmd":"open"}, {"cmd":"close"}, {"cmd":"stop"},
+                         {"cmd":"forceOpen"}, {"cmd":"forceClose"}, {"cmd":"PartiallyOpen"} ],
+
+  "Window":            [ {"cmd":"fullopen"}, {"cmd":"fullclose"}, {"cmd":"stop"},
+                         {"cmd":"open/on"}, {"cmd":"open/off"}, {"cmd":"close/on"}, {"cmd":"close/off"},
+                         {"cmd":"moveToPosition/{v}", "value":{"type":"number","min":0,"max":100,"label":"position"}} ],
+
+  "UpDownDigital":     [ {"cmd":"UpOn"}, {"cmd":"UpOff"}, {"cmd":"PulseUp"},
+                         {"cmd":"DownOn"}, {"cmd":"DownOff"}, {"cmd":"PulseDown"} ],
+  "UpDownAnalog":      [ {"cmd":"{v}", "value":{"type":"number","label":"value"}} ],
+
+  "Radio":             [ {"cmd":"reset"}, {"cmd":"next"}, {"cmd":"prev"},
+                         {"cmd":"{v}", "value":{"type":"number","min":1,"label":"output id"}} ],
+
+  "LightController":   [ {"cmd":"on"}, {"cmd":"off"}, {"cmd":"plus"}, {"cmd":"minus"},
+                         {"cmd":"{v}", "value":{"type":"number","min":0,"label":"scene"}} ],
+
+  "LightControllerV2": [ {"cmd":"plus"}, {"cmd":"minus"},
+                         {"cmd":"changeTo/{v}", "value":{"type":"number","min":0,"label":"mood id"}} ],
+
+  "ColorPicker":       [ {"cmd":"on"}, {"cmd":"off"} ],
+  "ColorPickerV2":     [ {"cmd":"on"}, {"cmd":"off"} ],
+
+  "AlarmClock":        [ {"cmd":"snooze"}, {"cmd":"dismiss"} ],
+
+  "Alarm":             [ {"cmd":"on"}, {"cmd":"off"}, {"cmd":"delayedon"}, {"cmd":"quit"} ],
+  "SmokeAlarm":        [ {"cmd":"mute"}, {"cmd":"confirm"}, {"cmd":"startDrill"} ],
+
+  "PulseAt":           [ {"cmd":"pulse"},
+                         {"cmd":"setPulseDuration/{v}", "value":{"type":"number","min":0,"label":"seconds"}},
+                         {"cmd":"setType/{v}", "value":{"type":"number","min":0,"label":"pulse type id"}} ],
+
+  "Hourcounter":       [ {"cmd":"reset"}, {"cmd":"resetAll"} ],
+
+  "Remote":            [ {"cmd":"on"}, {"cmd":"off"}, {"cmd":"mute"}, {"cmd":"play"}, {"cmd":"pause"},
+                         {"cmd":"stop"}, {"cmd":"rewind"}, {"cmd":"previous"}, {"cmd":"next"},
+                         {"cmd":"mode/{v}", "value":{"type":"number","min":0,"label":"mode id"}} ],
+
+  "IRoomControllerV2": [ {"cmd":"stopOverride"}, {"cmd":"activatePresenceSchedule"},
+                         {"cmd":"increasetemperature/{v}", "value":{"type":"number","label":"amount"}},
+                         {"cmd":"decreasetemperature/{v}", "value":{"type":"number","label":"amount"}},
+                         {"cmd":"setComfortTemperature/{v}", "value":{"type":"number","label":"temperature"}},
+                         {"cmd":"setManualTemperature/{v}", "value":{"type":"number","label":"temperature"}},
+                         {"cmd":"setOperatingMode/{v}", "value":{"type":"number","min":0,"label":"operating mode"}},
+                         {"cmd":"setFan/{v}", "value":{"type":"number","min":0,"label":"fan mode"}} ],
+
+  "CentralGate":            [ {"cmd":"open"}, {"cmd":"close"}, {"cmd":"stop"} ],
+  "CentralJalousie":        [ {"cmd":"FullUp"}, {"cmd":"FullDown"}, {"cmd":"shade"},
+                              {"cmd":"auto"}, {"cmd":"NoAuto"}, {"cmd":"stop"} ],
+  "CentralLightController": [ {"cmd":"on"}, {"cmd":"reset"} ],
+  "CentralAlarm":           [ {"cmd":"on"}, {"cmd":"off"}, {"cmd":"delayedon"}, {"cmd":"quit"} ],
+
+  "NfcCodeTouch":      [ {"cmd":"output/{v}", "value":{"type":"number","min":1,"label":"output nr"}} ],
+
+  "InfoOnlyAnalog":    [],
+  "InfoOnlyDigital":   [],
+  "InfoOnlyText":      []
+}

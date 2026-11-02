@@ -49,15 +49,11 @@ public enum HttpsStatus
      */
     public static HttpsStatus from( Optional< Integer > raw )
     {
-        if ( raw.isEmpty() )
-        {
-            return ABSENT;
-        }
-        return switch ( raw.get() )
+        return raw.map( integer -> switch ( integer )
         {
             case 1 -> SUPPORTED;
             case 2 -> EXPIRED;
             default -> UNKNOWN;
-        };
+        } ).orElse( ABSENT );
     }
 }

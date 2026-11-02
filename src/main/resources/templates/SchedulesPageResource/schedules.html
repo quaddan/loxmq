@@ -12,7 +12,7 @@
          (the module's internal event listener). Initial detection:
          localStorage('lang') > navigator.language > 'en'. The module exposes
          t(), setLang(), getLang(), applyI18n() on window. -->
-    <script src="/js/i18n.js"></script>
+    <script src="/js/i18n.js?v={cacheBust}"></script>
     <style>
         :root {
             --bg: #0e1116;
@@ -117,14 +117,19 @@
         }
         table.entries tr:hover { background: var(--bg-panel-hover); }
         table.entries td.actions { white-space: nowrap; text-align: right; }
+        /* Horizontal breathing room between the inline Edit / Delete action
+           buttons, which otherwise sit flush against each other. */
+        table.entries td.actions button + button { margin-left: 0.5rem; }
+        /* Neutral action buttons default to the accent blue — consistent with
+           the dashboard + the rest of the app. .btn-danger (delete) + status
+           greens stay semantic; .btn-secondary mutes Cancel below. */
         button {
-            background: var(--bg-panel-hover); color: var(--fg);
-            border: 1px solid var(--border); border-radius: 4px;
+            background: var(--accent); color: #000;
+            border: 1px solid var(--accent); border-radius: 4px;
             padding: 0.4rem 0.8rem; font-size: 0.8rem; cursor: pointer;
         }
-        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+        button.btn-secondary { background: transparent; color: var(--fg-dim); border-color: var(--border); }
         button.btn-danger { background: #b62324; color: #fff; border-color: #b62324; }
-        button.btn-danger:hover { background: #cf2e2e; }
         /* `.btn-primary` mirror of /users style (line 125 there).
            Accent blue + black text + more generous padding for the
            "primary action" usage (Add schedule, Save changes, etc.). */
@@ -133,7 +138,8 @@
             border-color: var(--accent);
             padding: 0.55rem 1.2rem; font-size: 0.85rem; font-weight: 600;
         }
-        button.btn-primary:hover { background: #79b8ff; }
+        /* Add / create → green (constructive). */
+        button.btn-success { background: var(--accent-up); color: #000; border-color: var(--accent-up); font-weight: 600; padding: 0.55rem 1.2rem; font-size: 0.85rem; }
         /* Chip for the "Currently" column (computed status). Mirror of
            .badge in users.html — compact pill, uniform black text
            (white on red lacked contrast). bg and title are set
@@ -241,6 +247,8 @@
     <!-- Shared responsive overrides — must load AFTER the inline <style> above
          so its mobile rules win by source order. See css/mobile.css. -->
     <link rel="stylesheet" href="/css/mobile.css?v=8">
+    <!-- Shared button hover/focus/press feedback — loaded last so it wins. -->
+    <link rel="stylesheet" href="/css/button-fx.css?v=1">
 </head>
 <body>
     <header>
@@ -251,9 +259,11 @@
         <nav class="tabs">
             <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
             <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/commands"  data-i18n="nav.commands">Commands</a>
             <a href="/schedules" data-i18n="nav.schedules" class="active">Schedules</a>
             <a href="/users"     data-i18n="nav.users">Users</a>
             <a href="/logs"      data-i18n="nav.logs">Logs</a>
+            <a href="/system"    data-i18n="nav.system">System</a>
         </nav>
         <!-- Language combobox. The i18n.js module (loaded in <head>)
              automatically wires up the change handler and syncs the
@@ -331,7 +341,7 @@
                         <span data-i18n="schedules.preview">Sent to Miniserver →</span> <code id="cal-attr-preview">—</code>
                     </div>
                 </label>
-                <button type="submit" class="btn-primary" data-i18n="common.add">Add</button>
+                <button type="submit" class="btn-success" data-i18n="common.add">Add</button>
             </form>
             <div id="status-bar"></div>
         </section>
@@ -350,7 +360,7 @@
                            title="Auto-refresh every 30s">
                         <input type="checkbox" id="auto-refresh-toggle" checked> <span data-i18n="common.auto30s">auto 30s</span>
                     </label>
-                    <button id="refresh-now" type="button" data-i18n-attr="title:common.refreshNow" title="Refresh now">↻ <span data-i18n="common.refresh">Refresh</span></button>
+                    <button id="refresh-now" type="button" style="margin-left:1rem;" data-i18n-attr="title:common.refreshNow" title="Refresh now">↻ <span data-i18n="common.refresh">Refresh</span></button>
                 </div>
             </div>
             <div class="table-scroll">
@@ -414,7 +424,7 @@
             </form>
             <div id="edit-status-bar" style="margin-top: 1.5rem; font-family: var(--mono); font-size: 0.8rem; min-height: 1.4em;"></div>
             <div class="modal-footer">
-                <button type="button" id="edit-cancel" data-i18n="common.cancel">Cancel</button>
+                <button type="button" id="edit-cancel" class="btn-secondary" data-i18n="common.cancel">Cancel</button>
                 <button type="button" id="edit-save" class="btn-primary" data-i18n="common.saveChanges">Save changes</button>
             </div>
         </div>

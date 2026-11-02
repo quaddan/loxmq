@@ -98,6 +98,22 @@ public enum LoxoneCloseCode
             ReconnectPolicy.LONG_PAUSE ),
 
     /**
+     * 4009 — Observed empirically (Miniserver fw 17.0.3.31) as the WS close
+     * code emitted alongside the documented OUT_OF_SERVICE binary indicator
+     * (Loxone "identifier 5") when the Miniserver goes out of service: a
+     * reboot or firmware update. NOT listed in the vendored V17.0 doc, which
+     * stops at 4008 — treat as a doc-drift item to re-validate against a
+     * newer revision. The reboot reconnect is primarily driven by the
+     * documented OUT_OF_SERVICE binary message; this mapping is the
+     * belt-and-suspenders path for the close itself.
+     */
+    MINISERVER_OUT_OF_SERVICE(
+            4009,
+            "Miniserver is going out of service (reboot / firmware update). "
+            + "Reconnecting on the fixed out-of-service cadence (initial delay + retry interval).",
+            ReconnectPolicy.OUT_OF_SERVICE ),
+
+    /**
      * RFC 6455 standard close codes (1000 normal, 1001 going away, 1006
      * abnormal, etc.) and anything we don't recognise. Standard backoff applies.
      */
@@ -162,6 +178,15 @@ public enum LoxoneCloseCode
          * update, slot exhaustion, login block).
          */
         LONG_PAUSE,
+
+        /**
+         * Fixed-cadence "wait it out" schedule for a Miniserver
+         * OUT_OF_SERVICE (reboot / firmware update): the first attempt fires
+         * after {@code reconnect.out-of-service.initial-delay}, then every
+         * {@code reconnect.out-of-service.retry-interval} — no exponential
+         * growth, no jitter. Mirrors the transport-side OOS policy.
+         */
+        OUT_OF_SERVICE,
 
         /**
          * Do not schedule any further reconnection. Used when the miniserver

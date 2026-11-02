@@ -415,6 +415,20 @@ public interface LoxoneConfig
                 @NotNull
                 @WithDefault( "PT60S" )
                 Duration keepaliveInterval();
+
+                /**
+                 * How many consecutive keepalive responses may be missed
+                 * before the binding declares the Miniserver link dead and
+                 * forces a reconnect. Guards against a half-open TCP
+                 * connection (e.g. a Miniserver reboot that leaves no RST)
+                 * which the WebSocket layer never surfaces as
+                 * {@code onClose}/{@code onError}. The watchdog trips when no
+                 * keepalive response has arrived for
+                 * {@code keepaliveInterval × keepaliveMaxMissed}.
+                 */
+                @Min( 1 )
+                @WithDefault( "3" )
+                int keepaliveMaxMissed();
             }
         }
 
@@ -698,6 +712,31 @@ public interface LoxoneConfig
 
             @WithDefault( "0.2" )
             double jitterFactor();
+
+            /** Reconnect timing applied when the Miniserver signals it is
+             *  going OUT_OF_SERVICE — the documented binary indicator
+             *  (Loxone "identifier 5", e.g. a reboot or firmware update),
+             *  corroborated by the (undocumented) 4009 close code the
+             *  firmware emits alongside it. Distinct from the exponential
+             *  backoff above: a fixed-cadence "wait it out" schedule that
+             *  mirrors the transport-side out-of-service policy. */
+            OutOfService outOfService();
+
+            interface OutOfService
+            {
+                /** Delay before the FIRST reconnect attempt after an
+                 *  OUT_OF_SERVICE — long enough to let the Miniserver finish
+                 *  rebooting before we knock. */
+                @NotNull
+                @WithDefault( "PT30S" )
+                Duration initialDelay();
+
+                /** Fixed gap between SUBSEQUENT attempts until the session is
+                 *  back (no exponential growth, no jitter). */
+                @NotNull
+                @WithDefault( "PT15S" )
+                Duration retryInterval();
+            }
         }
 
         interface Cache
@@ -888,6 +927,28 @@ public interface LoxoneConfig
              */
             @WithDefault( "4096" )
             int maxInboundPayloadBytes();
+
+            /**
+             * Maximum number of inbound commands buffered for dispatch to
+             * the Miniserver before new ones are dropped (with a
+             * {@code DROP-QUEUE-FULL} audit line + a {@code queue_full}
+             * drop metric).
+             *
+             * <p>The inbound command path is drained by a single dedicated
+             * worker thread so the broker's network event loop is never
+             * blocked by the (synchronous, up-to-5s) WebSocket send to the
+             * Miniserver. This cap bounds the burst buffer and is the real
+             * flood guard: a sustained flood — or a stalled Miniserver link
+             * that backs sends up — fills the queue and overflow is dropped
+             * in a controlled, observable way rather than stalling the
+             * broker connection or growing memory without bound.
+             *
+             * <p>Default {@code 256}. Order is preserved (single worker,
+             * FIFO). {@code @Min(1)} — a zero-capacity queue is nonsensical.
+             */
+            @Min( 1 )
+            @WithDefault( "256" )
+            int inboundQueueCapacity();
 
             interface Credentials
             {

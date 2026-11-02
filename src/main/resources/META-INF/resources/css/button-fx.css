@@ -1,0 +1,28 @@
+/* ============================================================================
+   Shared button interaction feedback — consistent across every admin page
+   (dashboard uses its own equivalent inline rules). Uses OUTLINE drawn INSIDE
+   the button (outline-offset: -2px) so there is NO layout reflow and no
+   dependency on each page's base border or padding. Linked AFTER each page's
+   inline <style> (and mobile.css) so it wins the cascade on equal specificity.
+
+       :hover  -> white 2px ring
+       :focus  -> gold  2px ring (keyboard Tab or mouse click; wins over hover
+                  because it is declared after it)
+       :active -> a 1px downward nudge (+ a hair smaller) for a tactile
+                  "pressed" feel
+
+   transform-only press => no reflow. The button keeps its own fill — only the
+   ring and the press change.
+   ============================================================================ */
+
+button { transition: transform 0.06s ease; }
+
+button:hover  { outline: 2px solid #ffffff; outline-offset: -2px; }
+/* Suppress the default outline on ANY focus so nothing lingers after a mouse
+   click (a clicked button keeps :focus until it is blurred). */
+button:focus  { outline: none; }
+/* The gold focus ring is for KEYBOARD navigation only (:focus-visible) — it does
+   NOT appear, nor linger, after a mouse click. Declared after :focus so it wins
+   for keyboard focus. Mouse users still get the hover ring + the press effect. */
+button:focus-visible { outline: 2px solid #d29922; outline-offset: -2px; }
+button:active { transform: translateY(1px) scale(0.99); }

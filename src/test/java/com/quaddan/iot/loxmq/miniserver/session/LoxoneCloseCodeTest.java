@@ -73,6 +73,15 @@ class LoxoneCloseCodeTest
     }
 
     @Test
+    @DisplayName( "4009 MINISERVER_OUT_OF_SERVICE → OUT_OF_SERVICE (reboot / firmware update)" )
+    void code4009()
+    {
+        assertThat( LoxoneCloseCode.from( 4009 ) ).isEqualTo( LoxoneCloseCode.MINISERVER_OUT_OF_SERVICE );
+        assertThat( LoxoneCloseCode.from( 4009 ).policy() )
+                .isEqualTo( LoxoneCloseCode.ReconnectPolicy.OUT_OF_SERVICE );
+    }
+
+    @Test
     @DisplayName( "RFC 6455 standard codes (1000, 1001, 1006, etc.) → STANDARD_OR_UNKNOWN + NORMAL" )
     void rfcStandardCodes()
     {

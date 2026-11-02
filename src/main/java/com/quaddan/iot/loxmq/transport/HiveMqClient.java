@@ -29,7 +29,10 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.time.Instant;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Production {@link MqttClient} backed by HiveMQ MQTT Client 1.3.x. MQTT v5
@@ -85,6 +88,12 @@ public class HiveMqClient implements MqttClient
      *  reconnect blips — we expose our own flag for "the binding believes
      *  the transport is up", which is more stable. */
     private final AtomicBoolean operatorAlive = new AtomicBoolean( false );
+
+    /** Instant the MQTT connection state last changed (connect OR disconnect) —
+     *  surfaced as the MQTT "depuis" timestamp on the dashboard, mirroring the
+     *  Miniserver session's state-change timestamp. Updated on every transition;
+     *  {@code null} until the first one. */
+    private final AtomicReference< Instant > stateChangedAtRef = new AtomicReference<>();
 
     @PostConstruct
     void buildClient()
@@ -324,6 +333,12 @@ public class HiveMqClient implements MqttClient
         return operatorAlive.get() && client != null && client.getState().isConnected();
     }
 
+    @Override
+    public Optional< Instant > stateChangedAt()
+    {
+        return Optional.ofNullable( stateChangedAtRef.get() );
+    }
+
     // ==========================================================================
     //  Pub / Sub
     // ==========================================================================
@@ -463,6 +478,9 @@ public class HiveMqClient implements MqttClient
     private void onConnected( MqttClientConnectedContext ctx )
     {
         LOG.info( "MQTT CONNACK received" );
+        // Record the state-change instant for the dashboard "depuis" chip
+        // (mirrors SessionTracker's state-change timestamp).
+        stateChangedAtRef.set( Instant.now() );
         // operatorAlive is set by connect() on the first call. Auto-reconnect
         // cycles also pass through here — make sure the online status is
         // republished so retained presence stays accurate after a blip.
@@ -483,6 +501,9 @@ public class HiveMqClient implements MqttClient
      *  log so the operator sees the source. */
     private void onDisconnected( MqttClientDisconnectedContext ctx )
     {
+        // Record the state-change instant (symmetric to onConnected) so the
+        // dashboard "depuis" chip also reports "disconnected since …".
+        stateChangedAtRef.set( Instant.now() );
         String src    = ctx.getSource().name();
         String reason = ctx.getCause() != null ? ctx.getCause().getMessage() : "";
         // Escalate to ERROR when the disconnect is NOT

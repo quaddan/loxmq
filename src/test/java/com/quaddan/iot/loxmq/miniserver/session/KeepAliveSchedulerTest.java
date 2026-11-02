@@ -59,8 +59,12 @@ class KeepAliveSchedulerTest
         public Map< String, String > getConfigOverrides()
         {
             // 50 ms — short enough for the suite to stay fast, long enough
-            // to keep CI flake at zero on a typical box.
-            return Map.of( "loxone.miniserver.connection.ws.keepalive-interval", "PT0.05S" );
+            // to keep CI flake at zero on a typical box. keepalive-max-missed
+            // pinned very high so the missed-response watchdog never trips
+            // during these scheduling/RTT tests (it has its own dedicated
+            // test — KeepAliveWatchdogTest).
+            return Map.of( "loxone.miniserver.connection.ws.keepalive-interval", "PT0.05S",
+                           "loxone.miniserver.connection.ws.keepalive-max-missed", "1000" );
         }
     }
 

@@ -173,23 +173,44 @@ public class MiniserverAdminCommandClient
         {
             throw new IllegalArgumentException( "pathSegment must not be blank" );
         }
+        return sendResolvedPath( ADMIN_COMMAND_PREFIX + pathSegment, timeout );
+    }
+
+    /**
+     * Like {@link #sendAndAwait} but for a FULLY-QUALIFIED {@code jdev/…} path
+     * supplied by the caller — used for system / CAN-bus diagnostic commands
+     * ({@code jdev/sys/*}, {@code jdev/bus/*}) that live OUTSIDE the
+     * {@code jdev/sps/} admin namespace. Same authenticated HTTPS GET (autht
+     * hash + token), concurrency cap and single auto-retry as
+     * {@link #sendAndAwait}.
+     *
+     * @param fullPath a full path; must start with {@code "jdev/"}
+     * @param timeout  kept for signature symmetry (HTTPS uses the configured
+     *                 request timeout)
+     * @return the {@code LL} sub-tree of the reply JSON
+     */
+    public JsonNode sendResolvedPath( String fullPath, Duration timeout )
+    {
+        if ( fullPath == null || !fullPath.startsWith( "jdev/" ) )
+        {
+            throw new IllegalArgumentException( "fullPath must start with 'jdev/' — got: " + fullPath );
+        }
         SessionState state = tracker.state();
         if ( state != SessionState.RUNNING )
         {
             throw new IllegalStateException(
                     "Admin command rejected — session is " + state + " (not RUNNING). "
-                    + "Path: " + pathSegment );
+                    + "Path: " + fullPath );
         }
         Optional< MiniserverToken > tokenOpt = tracker.token();
         if ( tokenOpt.isEmpty() )
         {
             throw new IllegalStateException(
                     "Admin command rejected — session RUNNING but no token cached. "
-                    + "Path: " + pathSegment );
+                    + "Path: " + fullPath );
         }
 
         MiniserverToken token       = tokenOpt.get();
-        String          fullPath    = ADMIN_COMMAND_PREFIX + pathSegment;
         String          userDecoded = decodeBase64( config.miniserver().security().credentials().user() );
 
         // Cap concurrency towards the Miniserver via the Semaphore.

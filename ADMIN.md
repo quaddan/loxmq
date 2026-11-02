@@ -1,10 +1,10 @@
 <img src="src/main/resources/META-INF/resources/images/loxmq-logo.svg" alt="loxmq">
 
-# Admin surface — Users · Schedules · Logs
+# Admin surface — Users · Schedules · Logs · Commands · System
 
 Beyond the **passive** bridge (outbound state events + inbound command I/O),
 loxmq exposes an **active** admin surface to the Miniserver: REST endpoints
-plus three management pages (`/users`, `/schedules`, `/logs`). This document
+plus five management pages (`/commands`, `/system`, `/users`, `/schedules`, `/logs`). This document
 is the single home for that surface — both **how it is built** (design) and
 **how to use it** (operator guide).
 
@@ -28,8 +28,13 @@ incident diagnosis lives in [RUNBOOK.md](./RUNBOOK.md).
 | `/api/v1/users` + `/api/v1/groups`                    | read-only   | visual audit of Miniserver users and groups                          | *Usermanagement* V17          |
 | `/api/v1/users/{uuid}/disable`                        | POST        | disable a user (refuses if the target is an admin)                   | *Usermanagement* V17          |
 | `/api/v1/users/{uuid}/groups/{gid}`                   | POST/DELETE | assign / remove group membership                                     | *Usermanagement* V17          |
+| `/api/v1/commands`                                    | POST        | send a command to a control (encrypted WS → Miniserver; actuates a real device) | *Communicating…* `jdev/sps/io` |
+| `/api/v1/commands/inbound`                            | GET/PUT     | read / toggle inbound (MQTT) command processing — runtime kill-switch | —                             |
+| `/api/v1/system-command`                              | POST        | run a catalogued `jdev` diagnostic command (System/PLC/Config/CAN bus); returns the raw `LL` reply | *Communicating…* `jdev/*` (catalogue: Postman + community) |
+| `/api/v1/state/current`                               | GET         | last known value per state-UUID — read-model for the Commands page   | —                             |
+| `/api/v1/logs/old`                                    | DELETE      | delete rotated (archived) log backups; keeps the active logs         | —                             |
 
-Each group is backed by a Qute page (`/schedules`, `/users`, `/logs`) — a
+Each group is backed by a Qute page (`/commands`, `/system`, `/schedules`, `/users`, `/logs`) — a
 minimal HTML shell + vanilla JS (~150–700 lines) that calls the REST
 endpoints via `fetch`. No external JS dependency, and the page renders even
 if the session is `DISCONNECTED` (no server-side serialization of entries).
@@ -112,19 +117,59 @@ operators.
 
 **Palette — one semantic mapping across pages:**
 
-| Colour                  | Chip            | Button                            |
-|-------------------------|-----------------|-----------------------------------|
-| green (`--accent-up`)   | Active          | —                                 |
-| amber (`--accent-warn`) | Pending         | —                                 |
-| gray (`--fg-dim`)       | Disabled        | Disable (`.btn-muted`)            |
-| red (`--accent-down`)   | Expired/Unknown | Delete (`.btn-danger`)            |
-| blue (`--accent`)       | —               | + New user/group (`.btn-primary`) |
+| Colour                  | Chip            | Button                                                                   |
+|-------------------------|-----------------|--------------------------------------------------------------------------|
+| green (`--accent-up`)   | Active          | **Create / add** (`.btn-success`) — + New user/group, Add tag, Add schedule |
+| amber (`--accent-warn`) | Pending         | —                                                                        |
+| gray (`--fg-dim`)       | Disabled        | Disable (`.btn-muted`), secondary / Cancel (`.btn-secondary`)            |
+| red (`--accent-down`)   | Expired/Unknown | **Delete / destructive** (`.btn-danger`)                                 |
+| blue (`--accent`)       | —               | **neutral action** (default / `.btn-primary`) — View/Edit, Refresh, Save changes |
 
 Chip text is black on every colour (white on red lacked contrast in dim light).
+Since v1.2.0 this mapping extends to the dashboard too — **green** also marks
+*connect*, **red** also marks *disconnect/reboot* (stop/destructive).
 
 ---
 
 ## 3. Operator guide — the pages
+
+### Commands — send a command to a control
+
+`/commands` reuses the room → category → control cascade, **including
+sub-controls** — the individual Dimmer/Switch outputs of a `LightControllerV2`
+etc., addressed by their own `uuidAction` (may carry a channel suffix like
+`/AI2`). Pick a control, or paste a **control OR state UUID** in the single
+UUID field: a *state* UUID — the kind seen in MQTT / `/states` — resolves to
+its commandable control and auto-selects it; an unknown UUID flags *Unknown*
+in red. The per-type command list comes from the curated
+`control-commands.json`; the **Custom command** field sends a raw token as-is
+(the ⓘ help explains you type only the token — *not* `jdev/sps/io/…` nor the
+UUID — and it refuses to send with an empty UUID). **Current state** shows each
+state's live value (seeded from `GET /api/v1/state/current`, kept live on the
+SSE stream). Sending `POST /api/v1/commands {uuid, command}` forwards to the
+Miniserver over the encrypted WS — **fire-and-forget** (no confirmation
+dialog; a click actuates the device). The top bar toggles **inbound command
+processing** (the MQTT `…/command` + `…/api` kill-switch via
+`PUT /api/v1/commands/inbound`); the label turns red when disabled.
+
+### System — run a diagnostic command
+
+`/system` lets you query the Miniserver with a **diagnostic** command (it reads
+device state; it does not actuate a control). Pick one from the catalogue —
+grouped by domain **System** (`jdev/sys` — CPU, heap, tasks, cycles, date/time,
+SD test, NTP, reboot…), **PLC** (`jdev/sps` — status, state, enum dev/in/out,
+program restart), **Config/Network** (`jdev/cfg` — firmware, MAC, DNS, gateway,
+mask…) and **CAN bus** (`jdev/bus`) — then **Send**; the raw `LL` JSON reply is
+shown and can be saved to a file (**Save**; `.json`/`.xml`/`.txt` inferred from
+the content).
+
+Each command is tagged **read-only** (safe), **action** (benign effect) or
+**destructive**; the destructive ones (`logoff`, `reboot`, PLC `restart`) prompt
+a confirm. ⚠️ On a **shared production Miniserver**, avoid the disruptive ones
+(reboot / restart / logoff / setdatetime) unless intended. Only commands present
+in the catalogue (`system-commands.json`) are accepted server-side — user,
+token and crypto commands are refused by construction (`400`), the session must
+be `RUNNING` (`409` otherwise), and a Miniserver/transport error returns `502`.
 
 ### Users — `State` chip vs `Validity` column
 
@@ -189,6 +234,13 @@ preference is session-scoped (it does not leak to the next operator).
   already at the bottom before the refresh (50 px tolerance); otherwise your
   scroll position is preserved so you can read history without being yanked
   on each tick.
+- **Old logs**: rotation backups (`application.log.1`, …) are hidden by
+  default — *Show old logs* reveals them; *Delete old logs* removes every
+  rotation backup (active logs kept) via `DELETE /api/v1/logs/old`.
+- **Near-real-time tail**: `auto (1s)` streams new lines by fetching only the
+  bytes appended since the last read (`GET …/{name}?since=<offset>`, with
+  `X-Log-Size` / `X-Log-Reset` on rotation). It is purely client-driven, so a
+  closed `/logs` page costs the backend nothing.
 
 ---
 

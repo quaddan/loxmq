@@ -103,8 +103,13 @@ public class CommandSubscriber
      * <pre>
      *   &lt;timestamp&gt; | &lt;topic&gt; | &lt;verdict&gt; | &lt;payload-or-preview&gt; [ | &lt;err&gt; ]
      * </pre>
-     * where {@code verdict} ∈ {@code ACCEPT}, {@code DROP-RETAINED},
-     * {@code DROP-OVERSIZED}, {@code DROP-MALFORMED}.
+     * where the receive-side {@code verdict} ∈ {@code QUEUED} (accepted +
+     * handed to the dispatch worker), {@code DROP-RETAINED},
+     * {@code DROP-OVERSIZED}, {@code DROP-MALFORMED}. The dispatch worker
+     * (in {@code SessionOrchestrator}) then logs the send outcome for a
+     * {@code QUEUED} command: {@code SENT}, {@code SEND-FAILED},
+     * {@code DROP-NOT-RUNNING} or {@code DROP-QUEUE-FULL} — correlate by the
+     * command identity.
      *
      * <p>Use cases: ops audit "who sent which command and when",
      * Home Assistant automation debugging, incident post-mortem without
@@ -120,6 +125,8 @@ public class CommandSubscriber
     ObjectMapper jsonMapper;
     @Inject
     MqttMetrics  metrics;
+    @Inject
+    InboundCommandGate gate;
 
     @Inject
     Event< MiniserverCommandEvent >                commandEvent;
@@ -170,6 +177,14 @@ public class CommandSubscriber
      *  rejected. */
     void onIncomingCommand( String topic, byte[] payload, boolean retained )
     {
+        if ( !gate.isEnabled() )
+        {
+            LOG.debugf( "Inbound command processing disabled — dropping message on %s. Preview: %s",
+                        topic, previewBody( payload ) );
+            COMMANDS_LOG.infof( "%s|DROP-DISABLED|%s", topic, previewBody( payload ) );
+            metrics.recordDrop( MqttMetrics.REASON_DISABLED );
+            return;
+        }
         if ( retained )
         {
             LOG.warnf( "Retained message dropped on command topic %s — the …/command topic must NOT carry retained payloads "
@@ -200,7 +215,7 @@ public class CommandSubscriber
         {
             MiniserverCommand cmd = jsonMapper.readValue( body, MiniserverCommand.class );
             commandEvent.fire( new MiniserverCommandEvent( cmd ) );
-            COMMANDS_LOG.infof( "%s|ACCEPT|%s", topic, body );
+            COMMANDS_LOG.infof( "%s|QUEUED|%s", topic, body );
         }
         catch ( JsonProcessingException e )
         {
@@ -216,6 +231,14 @@ public class CommandSubscriber
      *  rule as the command handler. */
     void onIncomingApi( String topic, byte[] payload, boolean retained )
     {
+        if ( !gate.isEnabled() )
+        {
+            LOG.debugf( "Inbound command processing disabled — dropping message on %s. Preview: %s",
+                        topic, previewBody( payload ) );
+            COMMANDS_LOG.infof( "%s|DROP-DISABLED|%s", topic, previewBody( payload ) );
+            metrics.recordDrop( MqttMetrics.REASON_DISABLED );
+            return;
+        }
         if ( retained )
         {
             LOG.warnf( "Retained message dropped on API topic %s — the …/api topic must NOT carry retained payloads "
@@ -247,7 +270,7 @@ public class CommandSubscriber
             MiniserverApiConnectorSetCommand cmd =
                     jsonMapper.readValue( body, MiniserverApiConnectorSetCommand.class );
             apiSetEvent.fire( new MiniserverApiConnectorSetCommandEvent( cmd ) );
-            COMMANDS_LOG.infof( "%s|ACCEPT|%s", topic, body );
+            COMMANDS_LOG.infof( "%s|QUEUED|%s", topic, body );
         }
         catch ( JsonProcessingException e )
         {

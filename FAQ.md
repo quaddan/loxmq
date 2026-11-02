@@ -32,6 +32,33 @@ Related docs (to consult first before advanced sections):
 > (*TLS certificate rejected*). The entries below cover the **Miniserver
 > side** — its cert, and the HTTPS handshake the binding makes to it.
 
+### Can I terminate loxmq's TLS on a reverse-proxy instead?
+
+Yes. Serving loxmq's **own** HTTPS (dashboard + REST + SSE) is done one of two
+ways — pick either, not both:
+
+- **Directly on loxmq** — configure the keystore/cert on its HTTP server
+  (see [INSTALL.md §7.3](./INSTALL.md#73-tls-certificates)). loxmq listens on
+  `:8443`.
+- **Behind a reverse-proxy** — the cert lives on the proxy (nginx, Caddy,
+  Traefik, HAProxy, …), which terminates TLS and forwards to loxmq running in
+  **plain HTTP** on the LAN (disable loxmq's TLS and let it listen on
+  `quarkus.http.port`, e.g. `:8080`). The proxy owns cert install **and
+  renewal** — often fully automatic via ACME / Let's Encrypt (Caddy and Traefik
+  do this out of the box), which removes the 90-day manual step.
+
+The reverse-proxy option is handy when you already run one for other services,
+want automatic renewal, or want a single TLS front door. Two things to get right:
+
+- **SSE** (`/api/v1/state/stream`) is a long-lived streaming response — disable
+  response buffering on that route (nginx: `proxy_buffering off;`) and allow a
+  long read timeout, otherwise the live dashboard/states updates stall.
+- Keep loxmq's plain-HTTP port **bound to the LAN/loopback** (not public), so TLS
+  is only ever terminated at the proxy.
+
+This concerns only loxmq's *server* side. The HTTPS handshake **to the
+Miniserver** is independent and unchanged (see below).
+
 ### How to upload my wildcard cert `*.example.com` on the Miniserver?
 
 **Loxone Config GUI** (recommended):
@@ -200,9 +227,11 @@ new JWT. Solution B cuts and rebuilds everything (keyexchange → getjwt
 
 ## 🛠️ Configuration
 
-> Where the knobs are defined + the `@ConfigMapping` validation →
-> **[ARCHITECTURE.md](./ARCHITECTURE.md)** §4. Which secrets never to commit +
-> the env-var policy → **[SECURITY.md](./SECURITY.md)**. One recurring how-to:
+> The **full knob list** (every property, default + meaning, grouped by domain)
+> → **[CONFIGURATION.md](./CONFIGURATION.md)**. Where the knobs are defined + the
+> `@ConfigMapping` validation → **[ARCHITECTURE.md](./ARCHITECTURE.md)** §4. Which
+> secrets never to commit + the env-var policy → **[SECURITY.md](./SECURITY.md)**.
+> One recurring how-to:
 
 ### How to override a knob via env var?
 
@@ -403,6 +432,79 @@ The old ones remain in place for fine-grain needs:
 > filter + smart auto-scroll, and auto-refresh now have a dedicated guide →
 > **[ADMIN.md §3](./ADMIN.md#3-operator-guide--the-pages)**.
 
+## ⚡ Commands — send to a control
+
+### How do I send a command to a Loxone control?
+
+Use the **`…/commands`** page: pick the device via the Room → Category →
+Control cascade (sub-controls like the individual Dimmers of a
+`LightControllerV2` are listed too), choose a command from the per-type list,
+and click **Send**. Or script it:
+
+```bash
+# ⚠️ Actuates a REAL device. Encrypted + sent over the WS, directly to the
+#    Miniserver (not via MQTT). Audited in commands.log (label "rest").
+curl -X POST -k -H 'Content-Type: application/json' \
+     -d '{"uuid":"<uuidAction>","command":"on"}' https://localhost:8443/api/v1/commands
+```
+
+Reply: `200` SENT / `409` session not RUNNING / `502` send failed. The page
+also has a **free-form "Custom command"** field (raw token only — **not** the
+`jdev/sps/io/<uuid>/` prefix, which the binding adds; a UUID is required).
+
+### How do I find a control when I only have a UUID (or a STATE UUID)?
+
+Paste it into the **UUID** field on `…/commands`. A control's **action UUID**
+selects it directly; a **state UUID** (the kind you see in MQTT `…/states/*`
+or on the `…/states` page) is resolved to its owning commandable control. If
+nothing matches, Room + Category show **"Unknown"** in red.
+
+### How do I stop / resume processing of *received* (MQTT) commands?
+
+Flip the toggle at the top of `…/commands`, or:
+
+```bash
+curl -X PUT -k -H 'Content-Type: application/json' \
+     -d '{"enabled":false}' https://localhost:8443/api/v1/commands/inbound
+```
+
+When disabled, inbound commands on `…/command` + `…/api` are dropped
+(`DROP-DISABLED`) instead of forwarded — a kill-switch for a runaway
+downstream automation. In-memory (resets on restart); does **not** affect the
+Commands page's own sends. See **[RUNBOOK.md §3.11 / §4](./RUNBOOK.md)**.
+
+## 🩺 On-demand diagnostics
+
+### How do I re-run the SD-card test or the firmware check without restarting?
+
+Both run automatically once per session (RUNNING). To re-run on demand, use
+the dashboard buttons **Run SD-card test** / **Check firmware** (a *Tested at* /
+*Checked at* timestamp confirms the fresh run), or:
+
+```bash
+curl -X POST -k https://localhost:8443/api/v1/sdcard/test      # {healthy, detail, checkedAt}
+curl -X POST -k https://localhost:8443/api/v1/firmware/check    # {upToDate, latest, checkedAt}
+```
+
+### How do I delete old (rotated) log files?
+
+The `…/logs` page has a **Delete old logs** button (and a show/hide toggle for
+them), or:
+
+```bash
+curl -X DELETE -k https://localhost:8443/api/v1/logs/old        # {deleted, freedBytes}
+```
+
+Only rotation backups (`*.log.1`, `*.log.2026-…`) are removed; the active
+`*.log` files are always kept.
+
+### How do I watch logs in (near) real time?
+
+On the `…/logs` page, tick **auto (1 s)**. It polls incrementally
+(`GET /api/v1/logs/{name}?since=<byteOffset>`, only the appended bytes), so it
+feels live yet is **purely client-driven** — the backend does nothing when the
+page is closed. See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the rationale.
+
 ## 🐞 Troubleshooting
 
 ### `Port 8080 seems to be in use by another process`
@@ -510,18 +612,18 @@ echo $?
 # → 1
 ```
 
-### `Reindexing quarkus-hivemq-client-2.5.0.jar` at build
+### `Reindexing quarkus-hivemq-client-2.6.0.jar` at build
 
 Upstream issue on the Quarkiverse side — the JAR embeds a Jandex v10
 (Jandex 2.x) index instead of v11+ (Jandex 3.x). Cosmetic, auto
 re-indexing at build (~150 ms). Documented in `pom.xml`.
 
-Will disappear as soon as a re-indexed 2.6.0+ version is released on Maven Central.
+Will disappear as soon as a re-indexed version (Jandex 3.x) is published upstream on Maven Central (still present on 2.6.0).
 
 ### `Unrecognized configuration key "quarkus.dev-ui.always-include"`
 
 Not in progress. The property was removed — no longer exists
-in Quarkus 3.37.0. If you see it, it's an out-of-date
+in Quarkus 3.40.1.1. If you see it, it's an out-of-date
 config file.
 
 ### The browser says "Not secure" despite a valid Let's Encrypt cert
@@ -554,9 +656,9 @@ loxmq/        # repo dir on disk (Maven artifactId = loxmq, app = loxmq)
 │   │   ├── transport/                  — MQTT (HiveMQ client + scheduler)
 │   │   └── util/                       — logging, Qute templates
 │   └── resources/
-│       ├── application*.yml                 — base + dev/staging/prod
+│       ├── application*.yaml                — base + dev/staging/prod
 │       ├── META-INF/resources/         — static files (JS + images)
-│       └── templates/<Resource>/*.html  — Qute pages (dashboard, states, schedules, users, logs)
+│       └── templates/<Resource>/*.html  — Qute pages (dashboard, states, commands, schedules, users, logs, system)
 └── src/test/                           — unit + IT
 ```
 

@@ -114,6 +114,65 @@ class LogsResourceTest
     }
 
     @Test
+    @DisplayName( "deleteOld removes rotation backups but keeps the active .log files" )
+    void deleteOldKeepsActiveLogs() throws Exception
+    {
+        Path active  = writeFixture( "application.log", List.of( "active" ) );
+        Path audit   = writeFixture( "audit.log", List.of( "active audit" ) );
+        Path rot1    = writeFixture( "application.log.1", List.of( "size-backup 1" ) );
+        Path rot2    = writeFixture( "application.log.2", List.of( "size-backup 2" ) );
+        Path rotDate = writeFixture( "commands.log.2026-05-28", List.of( "date-rotated" ) );
+
+        var resp = resource.deleteOld();
+        assertThat( resp.getStatus() ).isEqualTo( 200 );
+
+        // Active logs (no suffix) survive; every rotation backup is gone.
+        assertThat( Files.exists( active ) ).as( "active application.log kept" ).isTrue();
+        assertThat( Files.exists( audit ) ).as( "active audit.log kept" ).isTrue();
+        assertThat( Files.exists( rot1 ) ).as( "application.log.1 deleted" ).isFalse();
+        assertThat( Files.exists( rot2 ) ).as( "application.log.2 deleted" ).isFalse();
+        assertThat( Files.exists( rotDate ) ).as( "commands.log.2026-05-28 deleted" ).isFalse();
+
+        // The reported count covers at least our three rotated fixtures (the
+        // real test-profile log dir may hold others too).
+        @SuppressWarnings( "unchecked" )
+        var body = ( java.util.Map< String, Object > ) resp.getEntity();
+        assertThat( ( ( Number ) body.get( "deleted" ) ).intValue() ).isGreaterThanOrEqualTo( 3 );
+        assertThat( ( ( Number ) body.get( "freedBytes" ) ).longValue() ).isGreaterThanOrEqualTo( 0L );
+    }
+
+    @Test
+    @DisplayName( "tail ?since= returns only the appended bytes + EOF offset; resyncs past EOF" )
+    void incrementalDeltaAndReset() throws Exception
+    {
+        Path f     = writeFixture( "application.log", List.of( "l1", "l2", "l3" ) );
+        long size0 = Files.size( f );
+
+        // Full mode carries the current EOF offset in X-Log-Size.
+        var full = resource.tail( "application.log", 500, -1L );
+        assertThat( full.getStatus() ).isEqualTo( 200 );
+        assertThat( full.getHeaderString( "X-Log-Size" ) ).isEqualTo( String.valueOf( size0 ) );
+
+        // Delta from EOF → nothing new yet.
+        var d0 = resource.tail( "application.log", 500, size0 );
+        assertThat( d0.getHeaderString( "X-Log-Reset" ) ).isEqualTo( "false" );
+        assertThat( ( String ) d0.getEntity() ).isEmpty();
+
+        // Append a line, then delta from the OLD offset → ONLY the new bytes.
+        Files.writeString( f, "\nl4\n", java.nio.file.StandardOpenOption.APPEND );
+        long size1 = Files.size( f );
+        var  d1    = resource.tail( "application.log", 500, size0 );
+        assertThat( d1.getHeaderString( "X-Log-Reset" ) ).isEqualTo( "false" );
+        assertThat( d1.getHeaderString( "X-Log-Size" ) ).isEqualTo( String.valueOf( size1 ) );
+        assertThat( ( String ) d1.getEntity() ).contains( "l4" ).doesNotContain( "l1" );
+
+        // Offset past EOF (rotation / truncation) → resync to a fresh tail.
+        var reset = resource.tail( "application.log", 500, size1 + 10_000L );
+        assertThat( reset.getHeaderString( "X-Log-Reset" ) ).isEqualTo( "true" );
+        assertThat( ( String ) reset.getEntity() ).contains( "l4" );
+    }
+
+    @Test
     @DisplayName( "tail clips to last N lines on a small file" )
     void tailReturnsLastNLines() throws Exception
     {

@@ -7,7 +7,7 @@
 
     <groupId>com.quaddan.iot</groupId>
     <artifactId>loxmq</artifactId>
-    <version>1.1.0</version>
+    <version>1.2.0</version>
     <packaging>quarkus</packaging>
 
     <name>LoxMQ</name>

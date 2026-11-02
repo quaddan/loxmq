@@ -59,6 +59,14 @@ public class SchedulesResource
     @Inject
     ScheduleService schedules;
 
+    /**
+     * {@code GET /api/v1/schedules} — list all operating-mode calendar
+     * entries via {@link ScheduleService#list()}.
+     *
+     * @return 200 with a JSON array of {@link ScheduleEntry}; 503
+     *         {@code session-not-running}; 504 {@code miniserver-timeout};
+     *         502 {@code miniserver-error}.
+     */
     @GET
     public Response list()
     {
@@ -81,6 +89,17 @@ public class SchedulesResource
         }
     }
 
+    /**
+     * {@code POST /api/v1/schedules} — create a calendar entry. Resolves
+     * {@code calMode} to a {@link CalendarMode} then delegates to
+     * {@link ScheduleService#create}.
+     *
+     * @param body {@link ScheduleCreateRequest} ({@code name},
+     *             {@code operatingMode}, {@code calMode}, {@code calModeAttr})
+     * @return 201 {@code {status:success}}; 400 {@code missing-body} /
+     *         {@code invalid-input}; 503 {@code session-not-running};
+     *         504 {@code miniserver-timeout}; 502 {@code miniserver-error}.
+     */
     @POST
     public Response create( ScheduleCreateRequest body )
     {
@@ -117,6 +136,17 @@ public class SchedulesResource
         }
     }
 
+    /**
+     * {@code PUT /api/v1/schedules/{uuid}} — update an existing calendar
+     * entry via {@link ScheduleService#update}.
+     *
+     * @param uuid path param — the entry UUID to update
+     * @param body {@link ScheduleCreateRequest} ({@code name},
+     *             {@code operatingMode}, {@code calMode}, {@code calModeAttr})
+     * @return 200 {@code {status:success}}; 400 {@code missing-body} /
+     *         {@code invalid-input}; 503 {@code session-not-running};
+     *         504 {@code miniserver-timeout}; 502 {@code miniserver-error}.
+     */
     @PUT
     @Path( "/{uuid}" )
     public Response update( @PathParam( "uuid" ) String uuid, ScheduleCreateRequest body )
@@ -152,6 +182,15 @@ public class SchedulesResource
         }
     }
 
+    /**
+     * {@code DELETE /api/v1/schedules/{uuid}} — remove a calendar entry
+     * via {@link ScheduleService#delete}.
+     *
+     * @param uuid path param — the entry UUID to delete
+     * @return 200 {@code {status:success}}; 400 {@code invalid-input};
+     *         503 {@code session-not-running}; 504 {@code miniserver-timeout};
+     *         502 {@code miniserver-error}.
+     */
     @DELETE
     @Path( "/{uuid}" )
     public Response delete( @PathParam( "uuid" ) String uuid )
@@ -180,6 +219,13 @@ public class SchedulesResource
         }
     }
 
+    /**
+     * {@code GET /api/v1/schedules/heat-period} — current heating-period
+     * value via {@link ScheduleService#getHeatPeriod()}.
+     *
+     * @return 200 {@code {period:<value>}}; 503 {@code session-not-running};
+     *         502 {@code miniserver-error}.
+     */
     @GET
     @Path( "/heat-period" )
     public Response heatPeriod()
@@ -198,6 +244,13 @@ public class SchedulesResource
         }
     }
 
+    /**
+     * {@code GET /api/v1/schedules/cool-period} — current cooling-period
+     * value via {@link ScheduleService#getCoolPeriod()}.
+     *
+     * @return 200 {@code {period:<value>}}; 503 {@code session-not-running};
+     *         502 {@code miniserver-error}.
+     */
     @GET
     @Path( "/cool-period" )
     public Response coolPeriod()

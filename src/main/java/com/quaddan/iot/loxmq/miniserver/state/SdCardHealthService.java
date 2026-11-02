@@ -84,6 +84,21 @@ public class SdCardHealthService
     /** Session reached RUNNING → run the self-test once and stash the result. */
     void onMiniserverConnected( @ObservesAsync MiniserverConnectedEvent event )
     {
+        runSelfTest();
+    }
+
+    /**
+     * Run the SD-card self-test now ({@code HTTP GET jdev/sys/sdtest}), store the
+     * result and return it. Returns {@link Optional#empty()} if the Miniserver
+     * rejected the request (non-200 {@code Code}) or the call failed — the
+     * last-known {@link #status()} is kept in that case.
+     *
+     * <p>Invoked both by the {@link MiniserverConnectedEvent} observer (once per
+     * RUNNING) and on demand by {@code POST /api/v1/sdcard/test} — the operator
+     * can re-run it any time without restarting LoxMQ.
+     */
+    public Optional< SdCardStatus > runSelfTest()
+    {
         try
         {
             String body  = httpClient.fetchSdTest( basicAuthHeader() );
@@ -94,7 +109,7 @@ public class SdCardHealthService
             if ( !code.isEmpty() && !"200".equals( code ) )
             {
                 LOG.warnf( "SD card self-test rejected by Miniserver — Code=%s", code );
-                return;
+                return Optional.empty();
             }
             String       value  = ll.path( "value" ).asText( "" );
             SdCardStatus status = SdCardStatus.parse( value, Instant.now() );
@@ -107,6 +122,7 @@ public class SdCardHealthService
             {
                 LOG.warnf( "SD card self-test reported a problem — %s", status.detail() );
             }
+            return Optional.of( status );
         }
         catch ( Exception e )
         {
@@ -115,9 +131,10 @@ public class SdCardHealthService
             // logged as ERROR and leaves the dashboard row stuck on "pending").
             // Common causes: HTTP 401 (bad Basic credential), transport blip,
             // unparseable body. Keep the last-known status; the next
-            // MiniserverConnectedEvent retries.
+            // MiniserverConnectedEvent (or on-demand run) retries.
             LOG.warnf( "SD card self-test failed — %s",
                        e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName() );
+            return Optional.empty();
         }
     }
 

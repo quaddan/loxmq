@@ -41,6 +41,14 @@ quarkus:
   application:
     name: loxmq
 
+  # Native-image resources — the system-command catalogue is not only served
+  # statically but also read from the classpath at startup by
+  # SystemCommandRegistry (server-side allow-list), so it must be embedded in
+  # the native binary for getResourceAsStream to find it.
+  native:
+    resources:
+      includes: META-INF/resources/js/system-commands.json
+
   # ArC bean discovery — exclude the SmallRye Reactive Messaging MQTT
   # connectors bundled by `quarkus-hivemq-client`. We don't use the
   # reactive-messaging stream abstraction (we drive HiveMQ via the builder
@@ -447,6 +455,13 @@ loxone:
         # ISO-8601 duration "PnDTnHnMnS" (java.time.Duration; see the
         # "Time units" note in the header).
         keepalive-interval: PT60S
+        # Missed-response watchdog: declare the Miniserver link dead and force
+        # a reconnect once no keepalive response has arrived for
+        # keepalive-interval × keepalive-max-missed. Catches a half-open TCP
+        # connection (e.g. a Miniserver reboot that leaves no RST) that the
+        # WebSocket layer never surfaces as onClose/onError. Default 3 ⇒ ~3 min
+        # at the 60 s interval. Minimum 1.
+        keepalive-max-missed: 3
 
     app:
       # ----------------------------------------------------------------------
@@ -552,6 +567,16 @@ loxone:
       max-delay: PT2H         # ceiling the backoff delay grows toward (ISO-8601 duration "PnDTnHnMnS", see header)
       multiplier: 2.0         # each failed attempt multiplies the delay by this
       jitter-factor: 0.2      # ±fraction of randomness added to avoid thundering herd
+      # Out-of-service reconnect timing — applied instead of the exponential
+      # backoff above when the Miniserver signals it is going OUT_OF_SERVICE
+      # (documented binary indicator "identifier 5" — reboot / firmware update;
+      # also the 4009 close code the firmware emits). Fixed cadence, no jitter:
+      # wait `initial-delay` (let it finish rebooting), then retry every
+      # `retry-interval` until the session is back. Mirrors the transport-side
+      # out-of-service policy.
+      out-of-service:
+        initial-delay: PT30S  # delay before the first post-OutOfService reconnect (ISO-8601 duration)
+        retry-interval: PT15S # fixed gap between subsequent attempts until success (ISO-8601 duration)
 
     # Cache for LoxAPP3.json — two-level invalidation:
     #   1. lastModified match (miniserver's probe response vs on-disk marker)
@@ -646,6 +671,14 @@ loxone:
       # legitimate command/API SET and blocks flooding attempts. Set to 0 to
       # disable (NOT recommended in production).
       max-inbound-payload-bytes: 4096
+
+      # Inbound command dispatch queue capacity. Commands received on …/command
+      # and …/api are handed to a single dedicated worker (never the broker
+      # event loop) that does the synchronous WS send to the Miniserver. This
+      # caps the burst buffer: beyond it, commands are dropped with a
+      # DROP-QUEUE-FULL audit line + a `queue_full` drop metric — the controlled
+      # flood guard. Order preserved (FIFO). Minimum 1.
+      inbound-queue-capacity: 256
 
     reconnection:
       # HiveMQ client auto-reconnect for TRANSIENT broker drops (network blip,

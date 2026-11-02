@@ -95,6 +95,9 @@ class SessionOrchestratorTest
     @Inject
     CommandResponseRecorder responseRecorder;
 
+    @Inject
+    ReconnectScheduler reconnectScheduler;
+
     /** Production WS impl is swapped for a fake captured here for assertions. */
     private FakeMiniserverWebSocket fakeWs;
 
@@ -246,6 +249,81 @@ class SessionOrchestratorTest
     }
 
     // ==========================================================================
+    //  Reconnect after an ESTABLISHED session dies (Miniserver reboot)
+    // ==========================================================================
+
+    @Test
+    @DisplayName( "onError on a RUNNING session (TCP reset) ⇒ DISCONNECTED + reconnect scheduled" )
+    void onError_onRunningSession_schedulesReconnect()
+    {
+        driveToRunning();
+        // Reaching RUNNING resets the backoff counter.
+        assertThat( reconnectScheduler.attemptCount() ).isZero();
+
+        // Abrupt transport death — the JDK WS reports this via onError, NOT a
+        // clean onClose frame. Before the fix this left the session FAILED
+        // with no reconnect scheduled (operator had to reconnect by hand).
+        fakeWs.fireError( new java.io.IOException( "Connection reset by peer" ) );
+
+        assertThat( tracker.state() ).isEqualTo( SessionState.DISCONNECTED );
+        assertThat( reconnectScheduler.attemptCount() ).isGreaterThan( 0 );
+
+        reconnectScheduler.cancel(); // don't let the pending attempt fire during teardown
+    }
+
+    @Test
+    @DisplayName( "onConnectionDead on a RUNNING session (keepalive watchdog) ⇒ DISCONNECTED + reconnect scheduled" )
+    void onConnectionDead_onRunningSession_schedulesReconnect()
+    {
+        driveToRunning();
+        assertThat( reconnectScheduler.attemptCount() ).isZero();
+
+        orchestrator.onConnectionDead( "keepalive timeout (test)" );
+
+        assertThat( tracker.state() ).isEqualTo( SessionState.DISCONNECTED );
+        assertThat( reconnectScheduler.attemptCount() ).isGreaterThan( 0 );
+
+        reconnectScheduler.cancel();
+    }
+
+    @Test
+    @DisplayName( "onConnectionDead when NOT running ⇒ no-op (no reconnect scheduled)" )
+    void onConnectionDead_whenNotRunning_isNoOp()
+    {
+        tracker.transition( SessionState.DISCONNECTED );
+        int before = reconnectScheduler.attemptCount();
+
+        orchestrator.onConnectionDead( "spurious call while not connected" );
+
+        assertThat( tracker.state() ).isEqualTo( SessionState.DISCONNECTED );
+        assertThat( reconnectScheduler.attemptCount() ).isEqualTo( before );
+    }
+
+    /** Drive a full handshake to RUNNING via scripted replies (same script as
+     *  {@link #happyPathCacheMiss()}). Leaves the session RUNNING with the
+     *  reconnect backoff reset to zero. */
+    private void driveToRunning()
+    {
+        long validUntil = ChronoUnit.SECONDS.between(
+                LocalDateTime.of( 2009, 1, 1, 0, 0, 0 ).atZone( ZoneId.of( "UTC" ) ).toInstant(),
+                java.time.Instant.now().plusSeconds( 86_400 ) );
+        fakeWs.queueReply( """
+                           {"LL":{"control":"jdev/sys/keyexchange/...","value":"ack","Code":"200"}}""" );
+        fakeWs.queueReply( """
+                           {"LL":{"control":"jdev/sys/getjwt/...","value":\
+                           {"token":"abc.def.ghi","key":"0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",\
+                           "validUntil":%d,"tokenRights":4,"unsecurePass":false},"Code":"200"}}""".formatted( validUntil ) );
+        fakeWs.queueReply( """
+                           {"LL":{"control":"jdev/sps/LoxAPPversion3","value":"2026-05-18 12:00:00","Code":"200"}}""" );
+        fakeWs.queueReply( """
+                           {"lastModified":"2026-05-18 12:00:00","fixture":"fake LoxAPP3.json contents"}""" );
+        fakeWs.queueReply( """
+                           {"LL":{"control":"jdev/sps/enablebinstatusupdate","value":"1","Code":"200"}}""" );
+        orchestrator.connectAndWait( 5 );
+        assertThat( tracker.state() ).isEqualTo( SessionState.RUNNING );
+    }
+
+    // ==========================================================================
     //  Failure paths
     // ==========================================================================
 
@@ -331,6 +409,19 @@ class SessionOrchestratorTest
     //  Outbound commands + command responses
     // ==========================================================================
 
+    /** Poll until the condition holds or the timeout elapses. Inbound command
+     *  dispatch runs on a dedicated worker thread, so outbound frames appear
+     *  asynchronously. */
+    private static void awaitUntil( java.util.function.BooleanSupplier cond, java.time.Duration timeout )
+    {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while ( System.nanoTime() < deadline && !cond.getAsBoolean() )
+        {
+            try { Thread.sleep( 5 ); }
+            catch ( InterruptedException e ) { Thread.currentThread().interrupt(); return; }
+        }
+    }
+
     /** Drives the orchestrator through the happy-path handshake so the
      *  session reaches RUNNING. Returns nothing — the caller asserts on
      *  fakeWs.outboundFrames() / tracker.state() afterwards. */
@@ -367,7 +458,8 @@ class SessionOrchestratorTest
         commandBus.fire( new MiniserverCommandEvent(
                 new MiniserverCommand( "1072755d-024f-4540-ffff112233445566/AI1", "on" ) ) );
 
-        // One new outbound frame, encrypted form (jdev/sys/enc/<base64>).
+        // Dispatch is async (dedicated worker) — await the outbound frame.
+        awaitUntil( () -> fakeWs.outboundFrames().size() >= beforeCount + 1, java.time.Duration.ofSeconds( 2 ) );
         assertThat( fakeWs.outboundFrames() ).hasSize( beforeCount + 1 );
         String sent = fakeWs.outboundFrames().get( beforeCount );
         assertThat( sent ).startsWith( "jdev/sys/enc/" );
@@ -383,6 +475,7 @@ class SessionOrchestratorTest
         apiSetBus.fire( new MiniserverApiConnectorSetCommandEvent(
                 new MiniserverApiConnectorSetCommand( "VTI-LumiereBureau", "Lico", "Lc1", "Pulse" ) ) );
 
+        awaitUntil( () -> fakeWs.outboundFrames().size() >= beforeCount + 1, java.time.Duration.ofSeconds( 2 ) );
         assertThat( fakeWs.outboundFrames() ).hasSize( beforeCount + 1 );
         assertThat( fakeWs.outboundFrames().get( beforeCount ) ).startsWith( "jdev/sys/enc/" );
     }
@@ -391,12 +484,63 @@ class SessionOrchestratorTest
     @DisplayName( "MiniserverCommandEvent while NOT in RUNNING ⇒ dropped (no outbound frame)" )
     void commandEventBeforeRunning_isDropped()
     {
-        // Tracker stays at DISCONNECTED (no handshake driven). Command must
-        // be dropped — no point queueing for a session that doesn't exist.
+        // Tracker stays at DISCONNECTED (no handshake driven). The dispatch
+        // worker checks RUNNING at send time and drops (DROP-NOT-RUNNING) —
+        // no outbound frame. Wait a bounded window for a (would-be-buggy)
+        // frame to appear; it must not.
         int beforeCount = fakeWs.outboundFrames().size();
         commandBus.fire( new MiniserverCommandEvent(
                 new MiniserverCommand( "any-uuid", "on" ) ) );
+        awaitUntil( () -> fakeWs.outboundFrames().size() > beforeCount, java.time.Duration.ofMillis( 300 ) );
         assertThat( fakeWs.outboundFrames() ).hasSize( beforeCount );
+    }
+
+    @Test
+    @DisplayName( "burst of commands in RUNNING ⇒ all dispatched (no loss within capacity), encrypted" )
+    void commandBurst_allDispatched()
+    {
+        runHandshakeToRunning();
+        int beforeCount = fakeWs.outboundFrames().size();
+        int n           = 5;
+
+        for ( int i = 0; i < n; i++ )
+        {
+            commandBus.fire( new MiniserverCommandEvent(
+                    new MiniserverCommand( "burst-uuid-" + i, "on" ) ) );
+        }
+
+        awaitUntil( () -> fakeWs.outboundFrames().size() >= beforeCount + n, java.time.Duration.ofSeconds( 3 ) );
+        assertThat( fakeWs.outboundFrames() ).hasSize( beforeCount + n );
+        assertThat( fakeWs.outboundFrames().subList( beforeCount, beforeCount + n ) )
+                .allMatch( frame -> frame.startsWith( "jdev/sys/enc/" ) );
+    }
+
+    @Test
+    @DisplayName( "sendCommand (REST/Commands-page path) in RUNNING ⇒ SENT + encrypted frame (synchronous)" )
+    void sendCommand_inRunning_sent()
+    {
+        runHandshakeToRunning();
+        int before = fakeWs.outboundFrames().size();
+
+        SessionOrchestrator.SendResult result = orchestrator.sendCommand( "uuid-1", "on" );
+
+        // Synchronous on the caller thread (not the async MQTT queue) — frame is there immediately.
+        assertThat( result ).isEqualTo( SessionOrchestrator.SendResult.SENT );
+        assertThat( fakeWs.outboundFrames() ).hasSize( before + 1 );
+        assertThat( fakeWs.outboundFrames().get( before ) ).startsWith( "jdev/sys/enc/" );
+    }
+
+    @Test
+    @DisplayName( "sendCommand when NOT running ⇒ NOT_RUNNING, no frame" )
+    void sendCommand_notRunning()
+    {
+        tracker.transition( SessionState.DISCONNECTED );
+        int before = fakeWs.outboundFrames().size();
+
+        SessionOrchestrator.SendResult result = orchestrator.sendCommand( "uuid-1", "on" );
+
+        assertThat( result ).isEqualTo( SessionOrchestrator.SendResult.NOT_RUNNING );
+        assertThat( fakeWs.outboundFrames() ).hasSize( before );
     }
 
     @Test
@@ -489,6 +633,29 @@ class SessionOrchestratorTest
             if ( reply != null && l != null )
             {
                 l.onText( reply );
+            }
+        }
+
+        /** Test hook: simulate a transport error on the live listener — a TCP
+         *  reset / broken pipe, the typical signature of a Miniserver reboot.
+         *  The JDK WebSocket delivers these via {@code onError}, not a clean
+         *  {@code onClose} frame. */
+        void fireError( Throwable error )
+        {
+            Listener l = listenerRef.get();
+            if ( l != null )
+            {
+                l.onError( error );
+            }
+        }
+
+        /** Test hook: simulate a peer-initiated close frame. */
+        void fireClose( int statusCode, String reason )
+        {
+            Listener l = listenerRef.get();
+            if ( l != null )
+            {
+                l.onClose( statusCode, reason );
             }
         }
 

@@ -8,6 +8,7 @@ package com.quaddan.iot.loxmq.transport;
 import com.quaddan.iot.loxmq.config.LoxoneConfig;
 import com.quaddan.iot.loxmq.miniserver.command.MiniserverApiConnectorSetCommandEvent;
 import com.quaddan.iot.loxmq.miniserver.command.MiniserverCommandEvent;
+import com.quaddan.iot.loxmq.transport.subscribe.InboundCommandGate;
 import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.enterprise.event.Event;
@@ -64,6 +65,8 @@ class CommandSubscriberTest
     Event< MqttConnectedEvent > connectedBus;
     @Inject
     CommandRecorder             recorder;
+    @Inject
+    InboundCommandGate          gate;
 
     private FakeMqttClient fake;
 
@@ -74,6 +77,7 @@ class CommandSubscriberTest
         QuarkusMock.installMockForType( fake, HiveMqClient.class );
         fake.connect();
         recorder.clear();
+        gate.setEnabled( true );   // shared singleton — restore default before each test
         // Drive the subscribe step — the production CommandSubscriber
         // observes MqttConnectedEvent and issues subscribes on the fake.
         connectedBus.fire( new MqttConnectedEvent() );
@@ -151,6 +155,21 @@ class CommandSubscriberTest
         var cmd = recorder.cmds.get( 0 ).command();
         assertThat( cmd.uuid() ).isEqualTo( "1072755d-024f-4540-ffff112233445566/AI1" );
         assertThat( cmd.command() ).isEqualTo( "on" );
+    }
+
+    @Test
+    @DisplayName( "inbound processing DISABLED ⇒ well-formed command dropped, NO event fired" )
+    @Timeout( value = 5, unit = TimeUnit.SECONDS )
+    void disabledGate_dropsCommand()
+    {
+        gate.setEnabled( false );
+        var topic = config.transport().topics().subscribe().command().topic();
+        fake.deliverInbound( topic, topic,
+                             "{\"uuid\":\"1072755d-024f-4540-ffff112233445566/AI1\",\"command\":\"on\"}"
+                                     .getBytes( StandardCharsets.UTF_8 ) );
+
+        // The gate short-circuits BEFORE the JSON parse + event fire.
+        assertThat( recorder.cmds ).isEmpty();
     }
 
     @Test

@@ -86,6 +86,91 @@ class LoxApp3MetadataResolverTest
     }
 
     @Test
+    @DisplayName( "computeTopology — extracts control type + uuidAction (falls back to control UUID when absent)" )
+    void topologyTypeAndUuid() throws Exception
+    {
+        LoxApp3MetadataResolver r = newResolver();
+        var topo = r.computeTopology( """
+                                      {
+                                        "rooms": { "R1": { "name": "Salon" } },
+                                        "cats":  { "C1": { "name": "Éclairage" } },
+                                        "controls": {
+                                          "ctrl-switch":   { "name": "Lampe", "room": "R1", "cat": "C1",
+                                                             "type": "Switch", "uuidAction": "action-switch", "states": {} },
+                                          "ctrl-noaction": { "name": "Store", "room": "R1", "cat": "C1",
+                                                             "type": "Jalousie", "states": {} }
+                                        }
+                                      }""" );
+
+        assertThat( topo.controls() ).hasSize( 2 );
+
+        var sw = topo.controls().stream()
+                     .filter( c -> c.controlName().equals( "Lampe" ) ).findFirst().orElseThrow();
+        assertThat( sw.type() ).isEqualTo( "Switch" );
+        assertThat( sw.uuid() ).isEqualTo( "action-switch" );   // uuidAction wins
+
+        var store = topo.controls().stream()
+                        .filter( c -> c.controlName().equals( "Store" ) ).findFirst().orElseThrow();
+        assertThat( store.type() ).isEqualTo( "Jalousie" );
+        assertThat( store.uuid() ).isEqualTo( "ctrl-noaction" ); // fallback to the control's own UUID key
+
+        assertThat( topo.rooms() ).containsExactly( "Salon" );
+        assertThat( topo.categories() ).containsExactly( "Éclairage" );
+    }
+
+    @Test
+    @DisplayName( "computeCommandSurface — exposes sub-controls + lists each control's named states" )
+    void commandSurfaceSubControlsAndControlStates() throws Exception
+    {
+        LoxApp3MetadataResolver r = newResolver();
+        var surface = r.computeCommandSurface( """
+                                      {
+                                        "rooms": { "R1": { "name": "Extérieur" } },
+                                        "cats":  { "C1": { "name": "Éclairage" } },
+                                        "controls": {
+                                          "ctrl-lc": {
+                                            "name": "Lumière Devant", "room": "R1", "cat": "C1",
+                                            "type": "LightControllerV2", "uuidAction": "ctrl-lc",
+                                            "states": { "activeMoods": "state-lc-moods" },
+                                            "subControls": {
+                                              "ctrl-lc/AI2": {
+                                                "name": "Lumière 2", "type": "Dimmer",
+                                                "uuidAction": "ctrl-lc/AI2",
+                                                "states": { "position": "state-dim-pos" }
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }""" );
+
+        // Both the controller AND its Dimmer sub-control are selectable.
+        var controls = surface.topology().controls();
+        assertThat( controls ).hasSize( 2 );
+
+        var dimmer = controls.stream()
+                             .filter( c -> c.type().equals( "Dimmer" ) ).findFirst().orElseThrow();
+        assertThat( dimmer.controlName() ).isEqualTo( "Lumière Devant › Lumière 2" ); // parent-prefixed
+        assertThat( dimmer.uuid() ).isEqualTo( "ctrl-lc/AI2" );                        // channel-suffixed uuidAction
+        assertThat( dimmer.roomName() ).isEqualTo( "Extérieur" );                      // inherited from parent
+        assertThat( dimmer.catName() ).isEqualTo( "Éclairage" );
+
+        // Each control lists its named states, keyed by its command-target UUID.
+        // The page derives the pasted-state-UUID → control resolution from this.
+        assertThat( surface.controlStates() ).containsKeys( "ctrl-lc", "ctrl-lc/AI2" );
+
+        var dimStates = surface.controlStates().get( "ctrl-lc/AI2" );
+        assertThat( dimStates ).hasSize( 1 );
+        assertThat( dimStates.get( 0 ).name() ).isEqualTo( "position" );
+        assertThat( dimStates.get( 0 ).uuid() ).isEqualTo( "state-dim-pos" );
+
+        var lcStates = surface.controlStates().get( "ctrl-lc" );
+        assertThat( lcStates )
+                .extracting( LoxApp3MetadataResolver.StateRef::name,
+                             LoxApp3MetadataResolver.StateRef::uuid )
+                .containsExactly( org.assertj.core.groups.Tuple.tuple( "activeMoods", "state-lc-moods" ) );
+    }
+
+    @Test
     @DisplayName( "parse(fixture) — index contains both single-state and array-state UUIDs" )
     void parseFixture() throws Exception
     {

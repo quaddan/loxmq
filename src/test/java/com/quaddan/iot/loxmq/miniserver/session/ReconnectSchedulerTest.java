@@ -107,6 +107,20 @@ class ReconnectSchedulerTest
                 .isEqualTo( 1000L );
     }
 
+    @Test
+    @DisplayName( "OUT_OF_SERVICE policy: attempt 1 → initial-delay (30s), attempts 2+ → retry-interval (15s), fixed cadence" )
+    void outOfServiceFixedCadence()
+    {
+        // Uses the application.yaml defaults (the ShortBackoffProfile only
+        // overrides the exponential-backoff knobs, not the OOS sub-block).
+        assertThat( scheduler.computeDelay( LoxoneCloseCode.ReconnectPolicy.OUT_OF_SERVICE, 1 ).toMillis() )
+                .isEqualTo( 30_000L );
+        assertThat( scheduler.computeDelay( LoxoneCloseCode.ReconnectPolicy.OUT_OF_SERVICE, 2 ).toMillis() )
+                .isEqualTo( 15_000L );
+        assertThat( scheduler.computeDelay( LoxoneCloseCode.ReconnectPolicy.OUT_OF_SERVICE, 99 ).toMillis() )
+                .isEqualTo( 15_000L );
+    }
+
     // ==========================================================================
     //  Scheduling end-to-end
     // ==========================================================================

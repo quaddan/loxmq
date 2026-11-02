@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en" data-i18n-page-title="system.pageTitle">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>loxmq — System</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <!-- i18n FR/EN/DE. -->
+    <script src="/js/i18n.js?v={cacheBust}"></script>
+    <style>
+        :root {
+            --bg: #0e1116; --bg-panel: #161b22; --bg-panel-hover: #1c232b;
+            --fg: #c9d1d9; --fg-dim: #8b949e; --accent: #58a6ff;
+            --accent-warn: #d29922; --accent-down: #f85149; --accent-up: #3fb950;
+            --border: #30363d;
+            --mono: "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+            color-scheme: dark;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+               background: var(--bg); color: var(--fg); line-height: 1.5; }
+        header { background: var(--bg-panel); border-bottom: 1px solid var(--border);
+                 padding: 1rem 2rem; display: flex; justify-content: space-between;
+                 align-items: center; gap: 1rem; flex-wrap: wrap; }
+        header h1 { margin: 0; display: flex; align-items: center; gap: 0.75rem; }
+        header h1 img.logo { height: 96px; width: auto; display: block; }
+        .vh { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+        header nav.tabs { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        header nav.tabs a { color: var(--fg-dim); text-decoration: none; padding: 0.4rem 1rem;
+                            border: 1px solid transparent; border-radius: 4px; font-size: 0.85rem;
+                            text-transform: uppercase; letter-spacing: 0.05em; }
+        header nav.tabs a:hover { color: var(--fg); background: var(--bg-panel-hover); }
+        header nav.tabs a.active { color: var(--accent); border-color: var(--accent); }
+        header .lang-switcher {
+            background-color: var(--bg); color: var(--fg);
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='2' y1='12' x2='22' y2='12'/%3E%3Cpath d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat; background-position: 0.55rem center; background-size: 0.85rem 0.85rem;
+            border: 1px solid var(--border); border-radius: 4px; padding: 0.35rem 0.5rem 0.35rem 1.9rem;
+            font-family: inherit; font-size: 0.8rem; cursor: pointer; }
+        header .lang-switcher:hover { border-color: var(--accent); }
+        main { padding: 2rem; max-width: 900px; margin: 0 auto; }
+        .panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+        .panel h2 { margin: 0 0 0.5rem; font-size: 1.1rem; font-weight: 600; }
+        .intro { color: var(--fg-dim); font-size: 0.85rem; margin: 0 0 1.25rem; }
+        label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; color: var(--fg-dim);
+                margin-bottom: 1rem; }
+        select, input[type=text] { background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+                border-radius: 4px; padding: 0.5rem 0.6rem; font-family: inherit; font-size: 0.9rem; }
+        .cmd-meta { font-size: 0.8rem; color: var(--fg-dim); margin: 0.25rem 0 1rem;
+                    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+        .cmd-meta .path { font-family: var(--mono); color: var(--fg); }
+        .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.68rem;
+                 font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+        .badge.ro          { background: var(--accent-up);   color: #000; }
+        .badge.action      { background: var(--accent-warn); color: #000; }
+        .badge.destructive { background: #b62324;            color: #fff; }
+        button { background: var(--accent); color: #000; border: 2px solid var(--accent); border-radius: 4px;
+                 padding: 0.5rem 1.2rem; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        hr.sep { border: none; border-top: 1px solid var(--border); margin: 1.4rem 0; }
+        .result-bar { display: flex; align-items: center; justify-content: space-between;
+                      gap: 1rem; margin: 0 0 0.9rem; }
+        .result-head { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
+                       color: var(--fg-dim); margin: 0; }
+        button.btn-save { background: var(--accent-up); border-color: var(--accent-up); color: #000;
+                          padding: 0.3rem 0.9rem; font-size: 0.78rem; }
+        pre.result { background: #0a0d12; border: 1px solid var(--border); border-radius: 4px;
+                     color: var(--fg); font-family: var(--mono); font-size: 0.8rem; padding: 1rem; margin: 0;
+                     max-height: 50vh; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+        pre.result.err { border-color: var(--accent-down); color: var(--accent-down); }
+    </style>
+    <link rel="stylesheet" href="/css/mobile.css?v=8">
+    <!-- Shared button hover/focus/press feedback — loaded last so it wins. -->
+    <link rel="stylesheet" href="/css/button-fx.css?v=1">
+</head>
+<body>
+    <header>
+        <h1>
+            <a href="/" style="line-height:0;"><img class="logo" src="/images/loxmq-logo-compact.svg" alt=""></a>
+            <span class="vh">loxmq</span>
+        </h1>
+        <nav class="tabs">
+            <a href="/"          data-i18n="nav.dashboard">Dashboard</a>
+            <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/commands"  data-i18n="nav.commands">Commands</a>
+            <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
+            <a href="/users"     data-i18n="nav.users">Users</a>
+            <a href="/logs"      data-i18n="nav.logs">Logs</a>
+            <a href="/system"    data-i18n="nav.system" class="active">System</a>
+        </nav>
+        <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+            <option value="de">Deutsch</option>
+        </select>
+    </header>
+
+    <main>
+        <section class="panel">
+            <h2 data-i18n="system.title">Miniserver system commands</h2>
+            <p class="intro" data-i18n="system.intro">Run a Miniserver diagnostic command and read the raw JSON reply.</p>
+
+            <label class="full"><span data-i18n="system.field.command">Command</span>
+                <select id="cmd-select"></select>
+            </label>
+            <div class="cmd-meta" id="cmd-meta"></div>
+
+            <label id="param-field" style="display:none"><span id="param-label">Parameter</span>
+                <input type="text" id="cmd-param">
+            </label>
+
+            <hr class="sep">
+            <button id="send-btn" data-i18n="system.btn.send">Send</button>
+            <hr class="sep">
+
+            <div style="margin-top:1.4rem">
+                <div class="result-bar">
+                    <div class="result-head" data-i18n="system.result">Response (raw JSON)</div>
+                    <button id="save-btn" class="btn-save" data-i18n="system.btn.save" disabled>Save</button>
+                </div>
+                <pre class="result" id="result">—</pre>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        (function () {
+            // Current language for the registry descriptions (same detection as i18n.js).
+            var LANG = (localStorage.getItem('lang') || (navigator.language || 'en').slice(0, 2)).toLowerCase();
+            if (['fr', 'en', 'de'].indexOf(LANG) < 0) LANG = 'en';
+
+            var sel      = document.getElementById('cmd-select');
+            var meta     = document.getElementById('cmd-meta');
+            var paramFld = document.getElementById('param-field');
+            var paramLbl = document.getElementById('param-label');
+            var paramInp = document.getElementById('cmd-param');
+            var sendBtn  = document.getElementById('send-btn');
+            var saveBtn  = document.getElementById('save-btn');
+            var result   = document.getElementById('result');
+
+            var INDEX = {};   // cmd path -> command def
+            var lastSave = null;   // { text, desc } of the last successful reply
+
+            // Load the curated catalogue and build the grouped dropdown.
+            fetch('/js/system-commands.json')
+                .then(function (r) { return r.json(); })
+                .then(function (reg) {
+                    (reg.domains || []).forEach(function (dom) {
+                        var og = document.createElement('optgroup');
+                        og.label = (dom.label && (dom.label[LANG] || dom.label.en)) || dom.id;
+                        (dom.commands || []).forEach(function (c) {
+                            INDEX[c.cmd] = c;
+                            var o = document.createElement('option');
+                            o.value = c.cmd;
+                            var d = (c.desc && (c.desc[LANG] || c.desc.en)) || '';
+                            o.textContent = c.cmd.replace(/^jdev\//, '') + '  —  ' + d;
+                            og.appendChild(o);
+                        });
+                        sel.appendChild(og);
+                    });
+                    onSelect();
+                })
+                .catch(function (e) { result.textContent = 'Failed to load command catalogue: ' + e; });
+
+            function badge(type) {
+                var key = type === 'ro' ? 'system.badge.ro'
+                        : type === 'action' ? 'system.badge.action'
+                        : 'system.badge.destructive';
+                var label = (typeof t === 'function' ? t(key) : key);
+                return '<span class="badge ' + type + '">' + label + '</span>';
+            }
+
+            function onSelect() {
+                var c = INDEX[sel.value];
+                if (!c) { meta.innerHTML = ''; paramFld.style.display = 'none'; return; }
+                meta.innerHTML = '<span class="path">' + c.cmd + '</span> ' + badge(c.type || 'ro');
+                if (c.param) {
+                    paramFld.style.display = '';
+                    paramLbl.textContent = (c.param.label && (c.param.label[LANG] || c.param.label.en)) || 'Parameter';
+                    paramInp.placeholder = c.param.placeholder || '';
+                    paramInp.value = '';
+                } else {
+                    paramFld.style.display = 'none';
+                }
+            }
+            sel.addEventListener('change', onSelect);
+
+            function send() {
+                var c = INDEX[sel.value];
+                if (!c) return;
+                var cmd = c.cmd;
+                if (c.param) {
+                    var v = (paramInp.value || '').trim();
+                    if (!v) { paramInp.focus(); return; }
+                    cmd += '/' + v;
+                }
+                // Confirm destructive / mutating actions.
+                if (c.type === 'destructive') {
+                    if (!window.confirm(typeof t === 'function' ? t('system.confirm') : 'Confirm?')) return;
+                }
+                var desc = (c.desc && (c.desc[LANG] || c.desc.en)) || c.cmd;
+                sendBtn.disabled = true;
+                saveBtn.disabled = true;
+                lastSave = null;
+                result.className = 'result';
+                result.textContent = (typeof t === 'function' ? t('system.sending') : 'Sending…');
+                fetch('/api/v1/system-command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: cmd })
+                }).then(function (r) {
+                    return r.text().then(function (txt) {
+                        var pretty = txt;
+                        try { pretty = JSON.stringify(JSON.parse(txt), null, 2); } catch (e) { /* keep raw */ }
+                        result.className = r.ok ? 'result' : 'result err';
+                        result.textContent = pretty;
+                        // Only a successful reply is worth saving to a file.
+                        if (r.ok) { lastSave = { text: pretty, desc: desc }; saveBtn.disabled = false; }
+                    });
+                }).catch(function (e) {
+                    result.className = 'result err';
+                    result.textContent = String(e);
+                }).finally(function () { sendBtn.disabled = false; });
+            }
+            sendBtn.addEventListener('click', send);
+
+            // Save the last reply to a file: name = command description, extension
+            // inferred from the content (JSON → .json, XML → .xml, else .txt).
+            function inferExt(text) {
+                var s = (text || '').trim();
+                try { JSON.parse(s); return 'json'; } catch (e) { /* not JSON */ }
+                if (s.charAt(0) === '<') return 'xml';
+                return 'txt';
+            }
+            function mimeFor(ext) {
+                return ext === 'json' ? 'application/json'
+                     : ext === 'xml'  ? 'application/xml'
+                     : 'text/plain';
+            }
+            function doSave() {
+                if (!lastSave) return;
+                var ext  = inferExt(lastSave.text);
+                var base = (lastSave.desc || 'response')
+                               .replace(/[\\/:*?"<>|]+/g, ' ')   // strip filesystem-illegal chars
+                               .replace(/\s+/g, ' ').trim();
+                if (!base) base = 'response';
+                var blob = new Blob([lastSave.text], { type: mimeFor(ext) + ';charset=utf-8' });
+                var url  = URL.createObjectURL(blob);
+                var a    = document.createElement('a');
+                a.href = url;
+                a.download = base + '.' + ext;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+            }
+            saveBtn.addEventListener('click', doSave);
+
+            // Re-render descriptions when the language changes.
+            window.addEventListener('i18n:changed', function () {
+                LANG = (localStorage.getItem('lang') || LANG).toLowerCase();
+                if (['fr', 'en', 'de'].indexOf(LANG) < 0) LANG = 'en';
+                var cur = sel.value;
+                sel.innerHTML = '';
+                // rebuild from INDEX grouped — simplest: reload page data order lost, so just re-fetch
+                location.reload();
+            });
+        })();
+    </script>
+</body>
+</html>

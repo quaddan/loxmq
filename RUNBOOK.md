@@ -56,6 +56,13 @@ If all 4 are green → the app is fine, the problem is probably
 elsewhere (DNS, MQTT broker, downstream Home Assistant). If one is red →
 corresponding section below.
 
+To probe the **Miniserver itself** (CPU, heap, SD test, PLC state `jdev/sps/state`,
+firmware `jdev/cfg/version`, CAN-bus errors…), use the **`/system` page** — it runs
+catalogued `jdev` diagnostic commands over the authenticated HTTPS admin channel and
+shows the raw `LL` reply (or `POST /api/v1/system-command {command}`). ⚠️ On a shared
+production Miniserver, stick to the read-only commands; avoid reboot / PLC restart /
+logoff.
+
 ---
 
 ## 2. Expected healthy state — invariants
@@ -118,7 +125,19 @@ stuck in:
 | `AWAITING_TOKEN_REPLY`             | Invalid credentials, or insufficient JWT rights                                   | Check `loxone.miniserver.security.credentials.*` in the env file            |
 | `AWAITING_STRUCTURE_VERSION_REPLY` | Miniserver replies, but slowly or with an error                                   | Miniserver logs on the Loxone Config side                                   |
 | `AWAITING_STATUS_UPDATE_REPLY`     | `enablebinstatusupdate` rejected — insufficient JWT rights                        | See 3.4 (token rights)                                                      |
-| `OUT_OF_SERVICE`                   | Official Miniserver OOS (firmware update, Loxone reboot)                          | Wait, the binding reconnects on its own                                     |
+| `OUT_OF_SERVICE`                   | Official Miniserver OOS (firmware update, **Loxone reboot**)                       | Wait — the binding reconnects on its own (see reconnect policies below)      |
+
+**Reconnect policies** (how the binding recovers on its own):
+
+- **Miniserver reboot / OOS** — close code **`4009`** maps to the
+  `OUT_OF_SERVICE` policy: the binding **waits 30 s, then retries every 15 s**
+  until the Miniserver answers. Tune via
+  `loxone.miniserver.reconnect.out-of-service.initial-delay` (default `PT30S`) /
+  `.retry-interval` (default `PT15S`).
+- **Silent dead link** — the keepalive **missed-response watchdog** declares
+  the WS dead after `loxone.miniserver.ws.keepalive-max-missed` (default `3`)
+  unanswered keepalives and triggers a reconnect, even when no close frame
+  arrived (e.g. the Miniserver vanished mid-session).
 
 **Step 2** — force a new cycle:
 
@@ -336,6 +355,32 @@ If the endpoint responds but remote Prometheus doesn't scrape → LXC
 firewall, check that port 8080 is reachable from the
 Prometheus machine.
 
+### 3.11 Inbound (MQTT) commands aren't reaching the Miniserver
+
+Symptoms: a downstream publisher (Home Assistant) sends on `…/command` or
+`…/api` but the device doesn't move; `commands.log` shows the command dropped.
+
+Two intentional guards drop inbound commands (the `commands.log` verdict +
+the `binding_mqtt_inbound_dropped_total{reason=…}` metric tell them apart):
+
+- **`DROP-DISABLED`** (`reason=disabled`) — inbound command **processing is
+  switched OFF**. Someone toggled the kill-switch (the `/commands` page toggle,
+  or `PUT /api/v1/commands/inbound {enabled:false}`). Re-enable it (see §4).
+  This is in-memory and resets to *enabled* on restart.
+- **`DROP-QUEUE-FULL`** (`reason=queue_full`) — the bounded inbound dispatch
+  queue overflowed (a flood faster than the Miniserver can accept). Cap:
+  `loxone.transport.security.inbound-queue-capacity` (default `256`). Transient
+  bursts self-recover; a sustained flood points at a misbehaving publisher.
+
+```bash
+curl -fsS http://localhost:8080/q/metrics | grep 'binding_mqtt_inbound_dropped_total'
+curl -fsS http://localhost:8080/api/v1/commands/inbound     # {"enabled":true|false}
+tail -F /var/lib/loxmq/logs/commands.log | grep -E 'DROP-(DISABLED|QUEUE-FULL)'
+```
+
+(The other drop reasons — `retained`, `oversized`, `malformed` — are the
+pre-existing payload guards.)
+
 ---
 
 ## 4. Corrective procedures — the toolbox
@@ -404,6 +449,56 @@ mosquitto_sub -h broker.example.com -p 8084 --ws-protocol mqtt \
 (Without `-r --remove-retained` which would delete — **NEVER touch
 prod retained without explicit user validation**.)
 
+### Disable / re-enable inbound command processing (kill-switch)
+
+Stops/starts forwarding of **received** MQTT commands (`…/command` + `…/api`)
+to the Miniserver — a flood/misbehaviour kill-switch. Does **not** affect the
+Commands page's own outbound sends. In-memory → resets to *enabled* on restart.
+
+```bash
+curl -fsS http://localhost:8080/api/v1/commands/inbound                       # read state
+curl -fsS -X PUT -H 'Content-Type: application/json' \
+     -d '{"enabled":false}' http://localhost:8080/api/v1/commands/inbound     # disable
+curl -fsS -X PUT -H 'Content-Type: application/json' \
+     -d '{"enabled":true}'  http://localhost:8080/api/v1/commands/inbound     # re-enable
+```
+
+Or use the toggle at the top of the `…/commands` page (label turns red when disabled).
+
+### Run the SD-card self-test / firmware check on demand
+
+Both normally run once per RUNNING transition; re-run them any time **without
+restarting** (dashboard buttons *Run SD-card test* / *Check firmware*, which
+stamp a *Tested at* / *Checked at* timestamp on the refreshed row), or via REST:
+
+```bash
+curl -fsS -X POST http://localhost:8080/api/v1/sdcard/test   | jq   # {healthy, detail, checkedAt}
+curl -fsS -X POST http://localhost:8080/api/v1/firmware/check | jq   # {upToDate, latest, checkedAt}
+```
+
+### Delete rotated (archived) log files
+
+Removes only the rotation backups (`application.log.1`, `commands.log.2026-…`);
+the active `*.log` files are kept. Dashboard-free alternative to the `/logs`
+page *Delete old logs* button:
+
+```bash
+curl -fsS -X DELETE http://localhost:8080/api/v1/logs/old | jq   # {deleted, freedBytes}
+```
+
+### Send a command to a control manually
+
+```bash
+# ⚠️ Actuates a REAL device. Audited in commands.log (label "rest").
+curl -fsS -X POST -H 'Content-Type: application/json' \
+     -d '{"uuid":"<uuidAction>","command":"on"}' http://localhost:8080/api/v1/commands | jq
+```
+
+Encrypted + sent over the active WebSocket, **directly to the Miniserver**
+(not via MQTT). Reply: `200` SENT / `409` session not RUNNING / `502` send
+failed. The `…/commands` page is the GUI for this (cascade + per-type command
+list + UUID/state lookup).
+
 ---
 
 ## 5. Diagnostics by useful command
@@ -447,7 +542,7 @@ curl -fsS http://localhost:8080/q/metrics | grep -E '^binding_(mqtt|miniserver)_
 |---------------------------------------------------------|------------------------------------------------------------------|
 | `binding_mqtt_publishes_total{kind="state"}`            | Events published to `/states/*`                                  |
 | `binding_mqtt_publishes_total{kind="command_response"}` | Replies to inbound commands                                      |
-| `binding_mqtt_inbound_dropped_total`                    | Dropped events (overflow / broker disconnected) — must stay at 0 |
+| `binding_mqtt_inbound_dropped_total{reason=…}`          | Dropped inbound commands. `reason` ∈ `retained`/`oversized`/`malformed` (payload guards), `queue_full` (dispatch overflow), `disabled` (kill-switch ON). Steady state: 0 |
 | `binding_miniserver_keepalive_rtt_seconds`              | Miniserver WS RTT (timer) — p95 < 200 ms on healthy LAN          |
 | `binding_session_state_ordinal`                         | Gauge at 4 when `RUNNING` (0-4 depending on transition)          |
 | `binding_broker_connected`                              | Gauge at 1 when broker UP, 0 otherwise                           |
@@ -482,8 +577,10 @@ code or config change, a new patch:
 | Prod dashboard    | `https://loxmq.example.com:8443/`                                         |
 | Staging dashboard | `https://loxmq-staging.example.com:8443/`                                 |
 | Live states       | `…/states` (cascade filter room/cat/control + sparklines + persisted URL) |
+| Commands          | `…/commands` (send a command — cascade incl. sub-controls + UUID/state lookup + live current-state + inbound kill-switch) |
 | Schedules         | `…/schedules` (operating schedule CRUD)                                   |
 | Users             | `…/users` (audit users + Miniserver groups —)                             |
+| Logs              | `…/logs` (viewer — level/filter + near-real-time 1 s incremental tail + show/delete old) |
 
 ### Platform
 
@@ -497,11 +594,18 @@ code or config change, a new patch:
 
 | Target           | URL / command                                 |
 |------------------|-----------------------------------------------|
-| State snapshot   | `GET /api/v1/state` (JSON config + runtime)   |
-| SSE stream       | `GET /api/v1/state/stream` (live events)      |
-| Force reconnect  | `POST /api/v1/reconnect`                      |
-| Invalidate JWT   | `POST /api/v1/token/kill`                     |
-| MQTT (re)connect | `POST /api/v1/transport/{connect,disconnect}` |
+| State snapshot        | `GET /api/v1/state` (JSON config + runtime)            |
+| SSE stream            | `GET /api/v1/state/stream` (live events)               |
+| Current state / UUID  | `GET /api/v1/state/current` (last value per state-UUID)|
+| Force reconnect       | `POST /api/v1/reconnect`                               |
+| Invalidate JWT        | `POST /api/v1/token/kill`                              |
+| MQTT (re)connect      | `POST /api/v1/transport/{connect,disconnect}`         |
+| Send command          | `POST /api/v1/commands` (`{uuid, command}` → encrypted WS) |
+| Inbound kill-switch   | `GET`/`PUT /api/v1/commands/inbound` (`{enabled}`)     |
+| SD-card self-test     | `POST /api/v1/sdcard/test`                             |
+| Firmware check        | `POST /api/v1/firmware/check`                          |
+| Log tail (incremental)| `GET /api/v1/logs/{name}?tail=N` or `?since=<byteOffset>` |
+| Delete rotated logs   | `DELETE /api/v1/logs/old`                              |
 
 ### REST admin Miniserver
 

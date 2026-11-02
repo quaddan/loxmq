@@ -1,0 +1,74 @@
+{
+  "_comment": "Loxone Miniserver SYSTEM / PLC / CONFIG / CAN-bus diagnostic commands (jdev/sys, jdev/sps status-only, jdev/cfg, jdev/bus). SOURCES: the project's own docs/loxone/Loxone.postman_collection.json (operator-validated) + a community diagnostics list. NOT the official vendored PDFs. jdev/ = JSON form (dev/ = deprecated XML, interchangeable). This file is ALSO the server-side allow-list: ManagementResource.systemCommand only runs commands present here (exact match, or '<cmd>/<value>' for entries carrying a 'param'). User-management, token and crypto commands are intentionally excluded. Non-jdev resources (data/*, stats, dev/fsget/*) are out of scope (different transport). 'type': ro = read-only (safe), action = real but benign effect, destructive = disruptive/irreversible (UI gates behind a confirm). Reply = the Miniserver's raw LL JSON.",
+
+  "domains": [
+    {
+      "id": "sys",
+      "label": { "fr": "Système", "en": "System", "de": "System" },
+      "commands": [
+        { "cmd": "jdev/sys/cpu",              "type": "ro", "desc": { "fr": "Charge processeur",                 "en": "CPU load",                      "de": "CPU-Last" } },
+        { "cmd": "jdev/sys/lastcpu",          "type": "ro", "desc": { "fr": "Dernière valeur CPU",               "en": "Last CPU value",                "de": "Letzter CPU-Wert" } },
+        { "cmd": "jdev/sys/heap",             "type": "ro", "desc": { "fr": "Mémoire disponible",                "en": "Available memory",              "de": "Verfügbarer Speicher" } },
+        { "cmd": "jdev/sys/numtasks",         "type": "ro", "desc": { "fr": "Nombre de tâches actives",          "en": "Active task count",             "de": "Anzahl aktiver Tasks" } },
+        { "cmd": "jdev/sys/spscycle",         "type": "ro", "desc": { "fr": "Cycles de l'automate",              "en": "PLC cycles",                    "de": "SPS-Zyklen" } },
+        { "cmd": "jdev/sys/contextswitches",  "type": "ro", "desc": { "fr": "Commutations de contexte",          "en": "Context switches",              "de": "Kontextwechsel" } },
+        { "cmd": "jdev/sys/contextswitchesi", "type": "ro", "desc": { "fr": "Commutations de contexte déclenchées", "en": "Triggered context switches", "de": "Ausgelöste Kontextwechsel" } },
+        { "cmd": "jdev/sys/ints",             "type": "ro", "desc": { "fr": "Interruptions système",             "en": "System interrupts",             "de": "System-Interrupts" } },
+        { "cmd": "jdev/sys/comints",          "type": "ro", "desc": { "fr": "Interruptions de communication",    "en": "Communication interrupts",      "de": "Kommunikations-Interrupts" } },
+        { "cmd": "jdev/sys/lanints",          "type": "ro", "desc": { "fr": "Interruptions LAN",                 "en": "LAN interrupts",                "de": "LAN-Interrupts" } },
+        { "cmd": "jdev/sys/watchdog",         "type": "ro", "desc": { "fr": "Bits de surveillance (watchdog)",   "en": "Watchdog bits",                 "de": "Watchdog-Bits" } },
+        { "cmd": "jdev/sys/date",             "type": "ro", "desc": { "fr": "Date locale",                       "en": "Local date",                    "de": "Lokales Datum" } },
+        { "cmd": "jdev/sys/time",             "type": "ro", "desc": { "fr": "Heure locale",                      "en": "Local time",                    "de": "Lokale Zeit" } },
+        { "cmd": "jdev/sys/check",            "type": "ro", "desc": { "fr": "Connexions actives",                "en": "Active connections",            "de": "Aktive Verbindungen" } },
+        { "cmd": "jdev/sys/getcertificate",   "type": "ro", "desc": { "fr": "Certificat TLS du Miniserver",      "en": "Miniserver TLS certificate",    "de": "Miniserver-TLS-Zertifikat" } },
+
+        { "cmd": "jdev/sys/sdtest",           "type": "action",      "desc": { "fr": "Lancer un test de la carte SD",        "en": "Run an SD-card test",                   "de": "SD-Karten-Test starten" } },
+        { "cmd": "jdev/sys/ntp",              "type": "action",      "desc": { "fr": "Forcer une requête NTP",               "en": "Force an NTP request",                  "de": "NTP-Anfrage erzwingen" } },
+        { "cmd": "jdev/sys/setdatetime",      "type": "action",      "desc": { "fr": "Définir la date et l'heure",           "en": "Set the date & time",                   "de": "Datum und Uhrzeit setzen" },
+          "param": { "type": "text", "placeholder": "YYYY-MM-DD HH:MM:SS", "label": { "fr": "Date/heure", "en": "Date/time", "de": "Datum/Zeit" } } },
+        { "cmd": "jdev/sys/logoff",           "type": "destructive", "desc": { "fr": "Déconnecter toutes les sessions Loxone Config", "en": "Log off all Loxone Config sessions", "de": "Alle Loxone-Config-Sitzungen abmelden" } },
+        { "cmd": "jdev/sys/reboot",           "type": "destructive", "desc": { "fr": "Redémarrer le Miniserver (matériel)",   "en": "Reboot the Miniserver (hardware)",      "de": "Miniserver neu starten (Hardware)" } }
+      ]
+    },
+    {
+      "id": "sps",
+      "label": { "fr": "Automate (PLC)", "en": "PLC", "de": "SPS" },
+      "commands": [
+        { "cmd": "jdev/sps/status",  "type": "ro", "desc": { "fr": "Fréquence actuelle de l'automate",            "en": "Current PLC frequency",            "de": "Aktuelle SPS-Frequenz" } },
+        { "cmd": "jdev/sps/state",   "type": "ro", "desc": { "fr": "État du Miniserver (0=no status · 2=programme chargé · 3=démarré · 5=en marche · …)", "en": "Miniserver state (0=no status · 2=program loaded · 3=started · 5=running · …)", "de": "Miniserver-Status (0=kein Status · 2=Programm geladen · 3=gestartet · 5=läuft · …)" } },
+        { "cmd": "jdev/sps/enumdev", "type": "ro", "desc": { "fr": "Lister le Miniserver + extensions",           "en": "List Miniserver + extensions",     "de": "Miniserver + Erweiterungen auflisten" } },
+        { "cmd": "jdev/sps/enumin",  "type": "ro", "desc": { "fr": "Lister toutes les entrées",                   "en": "List all inputs",                  "de": "Alle Eingänge auflisten" } },
+        { "cmd": "jdev/sps/enumout", "type": "ro", "desc": { "fr": "Lister toutes les sorties",                   "en": "List all outputs",                 "de": "Alle Ausgänge auflisten" } },
+        { "cmd": "jdev/sps/restart", "type": "destructive", "desc": { "fr": "Redémarrer l'automate (programme — interrompt les automatismes)", "en": "Restart the PLC program (interrupts automation)", "de": "SPS-Programm neu starten (unterbricht die Automatisierung)" } }
+      ]
+    },
+    {
+      "id": "cfg",
+      "label": { "fr": "Configuration / Réseau", "en": "Configuration / Network", "de": "Konfiguration / Netzwerk" },
+      "commands": [
+        { "cmd": "jdev/cfg/version",        "type": "ro", "desc": { "fr": "Version du firmware",          "en": "Firmware version",         "de": "Firmware-Version" } },
+        { "cmd": "jdev/cfg/versiondate",    "type": "ro", "desc": { "fr": "Date du firmware",             "en": "Firmware date",            "de": "Firmware-Datum" } },
+        { "cmd": "jdev/cfg/device",         "type": "ro", "desc": { "fr": "Nom du Miniserver",            "en": "Miniserver name",          "de": "Miniserver-Name" } },
+        { "cmd": "jdev/cfg/mac",            "type": "ro", "desc": { "fr": "Adresse MAC",                  "en": "MAC address",              "de": "MAC-Adresse" } },
+        { "cmd": "jdev/cfg/ftp",            "type": "ro", "desc": { "fr": "Port FTP",                     "en": "FTP port",                 "de": "FTP-Port" } },
+        { "cmd": "jdev/cfg/timezoneoffset", "type": "ro", "desc": { "fr": "Décalage de fuseau horaire",   "en": "Timezone offset",          "de": "Zeitzonen-Offset" } },
+        { "cmd": "jdev/cfg/dhcp",           "type": "ro", "desc": { "fr": "DHCP activé ?",                "en": "DHCP enabled?",            "de": "DHCP aktiviert?" } },
+        { "cmd": "jdev/cfg/dns1",           "type": "ro", "desc": { "fr": "DNS primaire",                 "en": "Primary DNS",              "de": "Primärer DNS" } },
+        { "cmd": "jdev/cfg/dns2",           "type": "ro", "desc": { "fr": "DNS secondaire",               "en": "Secondary DNS",            "de": "Sekundärer DNS" } },
+        { "cmd": "jdev/cfg/gateway",        "type": "ro", "desc": { "fr": "Passerelle",                   "en": "Gateway",                  "de": "Gateway" } },
+        { "cmd": "jdev/cfg/mask",           "type": "ro", "desc": { "fr": "Masque de sous-réseau",        "en": "Subnet mask",              "de": "Subnetzmaske" } },
+        { "cmd": "jdev/cfg/ntp",            "type": "ro", "desc": { "fr": "Serveur NTP configuré",        "en": "Configured NTP server",    "de": "Konfigurierter NTP-Server" } },
+        { "cmd": "jdev/cfg/api",            "type": "ro", "desc": { "fr": "Infos API (serial, version)",  "en": "API info (serial, version)", "de": "API-Info (Seriennr., Version)" } }
+      ]
+    },
+    {
+      "id": "bus",
+      "label": { "fr": "Bus CAN", "en": "CAN bus", "de": "CAN-Bus" },
+      "commands": [
+        { "cmd": "jdev/bus/frameerrors",  "type": "ro", "desc": { "fr": "Erreurs de trame",        "en": "Frame errors",   "de": "Frame-Fehler" } },
+        { "cmd": "jdev/bus/overruns",     "type": "ro", "desc": { "fr": "Erreurs de débordement",  "en": "Overrun errors", "de": "Overrun-Fehler" } },
+        { "cmd": "jdev/bus/parityerrors", "type": "ro", "desc": { "fr": "Erreurs de parité",       "en": "Parity errors",  "de": "Paritätsfehler" } }
+      ]
+    }
+  ]
+}

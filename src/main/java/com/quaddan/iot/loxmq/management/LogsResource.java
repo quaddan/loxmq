@@ -5,6 +5,7 @@
 
 package com.quaddan.iot.loxmq.management;
 
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -25,6 +26,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -82,6 +84,13 @@ public class LogsResource
     private static final Pattern ALLOWED_FILE_PATTERN =
             Pattern.compile( "[a-z]+\\.log(\\.\\d{4}-\\d{2}-\\d{2}|\\.\\d+)?" );
 
+    /** A ROTATED (archived) log file: a base {@code name.log} followed by a
+     *  <strong>required</strong> backup suffix ({@code .1}, {@code .2}, … or a
+     *  {@code .2026-05-28} date). The active {@code name.log} (no suffix) does
+     *  NOT match — so {@link #deleteOld()} can never remove a live log. */
+    private static final Pattern ROTATED_FILE_PATTERN =
+            Pattern.compile( "[a-z]+\\.log(\\.\\d{4}-\\d{2}-\\d{2}|\\.\\d+)" );
+
     /** Files below this size are read whole + sliced ; above we use a
      *  reverse-scan via RandomAccessFile. 10 MB is generous enough for
      *  most cases on a steady-state binding. */
@@ -92,6 +101,12 @@ public class LogsResource
      *  on a multi-million-line file. */
     private static final int MAX_TAIL_LINES = 5_000;
 
+    /** Incremental-mode resync threshold. If a client's {@code since} offset is
+     *  more than this far behind EOF (e.g. the tab was backgrounded while the
+     *  log churned), skip replaying the backlog byte-for-byte and return a fresh
+     *  tail instead (flagged {@code X-Log-Reset: true}). */
+    private static final long RESYNC_LIMIT = 2L * 1024 * 1024;
+
     /** Resolved via the {@code quarkus.log.file.path} value
      *  ({@code ${LOG_DIR:logs}/application.log}). The parent directory
      *  of the main application log IS the log directory the binding
@@ -100,6 +115,15 @@ public class LogsResource
     @ConfigProperty( name = "quarkus.log.file.path" )
     String applicationLogPath;
 
+    /**
+     * {@code GET /api/v1/logs} — list the whitelisted log files in the
+     * log directory as JSON {@link LogFileEntry} records (name, size,
+     * lastModified), sorted by mtime descending (active file first).
+     * Returns an empty array if the log directory does not exist yet or
+     * cannot be listed.
+     *
+     * @return JSON array of {@link LogFileEntry}
+     */
     @GET
     public List< LogFileEntry > list()
     {
@@ -140,11 +164,33 @@ public class LogsResource
         }
     }
 
+    /**
+     * {@code GET /api/v1/logs/{name}} — return {@code text/plain} content
+     * of a single log file. Two modes:
+     * <ul>
+     *   <li>Full-tail ({@code since} absent / &lt; 0): last {@code tail}
+     *       lines (default 500, clamped to [1, {@link #MAX_TAIL_LINES}]).</li>
+     *   <li>Incremental ({@code since} &ge; 0): only the bytes appended past
+     *       that byte offset, for zero-idle delta polling. If the file
+     *       rotated/truncated or the client fell beyond {@link #RESYNC_LIMIT}
+     *       behind, resync to a fresh tail flagged {@code X-Log-Reset: true}.</li>
+     * </ul>
+     * Responses carry {@code X-Log-File}, {@code X-Log-Size} (current EOF
+     * offset — the next {@code since} cursor), plus {@code X-Log-Tail}
+     * (full-tail mode) or {@code X-Log-Reset} (incremental mode).
+     *
+     * @param name  path param — filename, must match {@link #ALLOWED_FILE_PATTERN}
+     * @param tail  query param — number of trailing lines (default 500)
+     * @param since query param — byte offset for incremental mode (default -1 = full tail)
+     * @return 200 with the content; 400 whitelist/path-escape rejection;
+     *         404 file not found; 500 read failure.
+     */
     @GET
     @Path( "/{name}" )
     @Produces( MediaType.TEXT_PLAIN )
     public Response tail( @PathParam( "name" ) String name,
-                          @QueryParam( "tail" ) @DefaultValue( "500" ) int tail )
+                          @QueryParam( "tail" ) @DefaultValue( "500" ) int tail,
+                          @QueryParam( "since" ) @DefaultValue( "-1" ) long since )
     {
         if ( !ALLOWED_FILE_PATTERN.matcher( name ).matches() )
         {
@@ -178,11 +224,38 @@ public class LogsResource
         }
         try
         {
+            long size = Files.size( target );
+
+            // Incremental mode (?since=<byte offset>) — return ONLY the bytes
+            // appended since the client's last read, so near-real-time polling
+            // transfers deltas instead of re-reading the whole tail each tick.
+            // The server does nothing unless the client polls → zero cost when
+            // the page is closed.
+            if ( since >= 0 )
+            {
+                boolean reset = since > size || ( size - since ) > RESYNC_LIMIT;
+                // reset = file rotated/truncated, OR the client fell too far
+                // behind (backgrounded tab) → resync to a fresh tail rather than
+                // replay the whole backlog. Otherwise just the new bytes.
+                String body = reset
+                        ? tailFile( target, tail )
+                        : new String( readRange( target, since, size ), StandardCharsets.UTF_8 );
+                return Response.ok( body )
+                               .type( MediaType.TEXT_PLAIN + ";charset=UTF-8" )
+                               .header( "X-Log-File", name )
+                               .header( "X-Log-Size", String.valueOf( size ) )
+                               .header( "X-Log-Reset", String.valueOf( reset ) )
+                               .build();
+            }
+
+            // Full-tail mode (initial load / manual refresh). X-Log-Size carries
+            // the current EOF offset so the client can start incremental polling.
             String content = tailFile( target, tail );
             return Response.ok( content )
                            .type( MediaType.TEXT_PLAIN + ";charset=UTF-8" )
                            .header( "X-Log-File", name )
                            .header( "X-Log-Tail", String.valueOf( tail ) )
+                           .header( "X-Log-Size", String.valueOf( size ) )
                            .build();
         }
         catch ( IOException e )
@@ -190,6 +263,83 @@ public class LogsResource
             LOG.warnf( e, "Failed to read %s", target );
             return Response.serverError().entity( "read failed: " + e.getMessage() ).build();
         }
+    }
+
+    /** Convenience full-tail overload ({@code since = -1}) — package-private,
+     *  not a JAX-RS endpoint; used by tests and internal call sites. */
+    Response tail( String name, int tail )
+    {
+        return tail( name, tail, -1L );
+    }
+
+    /** Read bytes {@code [from, to)} of a file. {@code to - from} is bounded by
+     *  {@link #RESYNC_LIMIT} at the single call site, so the int cast is safe. */
+    private static byte[] readRange( java.nio.file.Path file, long from, long to ) throws IOException
+    {
+        int len = ( int ) Math.max( 0L, to - from );
+        byte[] buf = new byte[ len ];
+        if ( len == 0 )
+        { return buf; }
+        try ( RandomAccessFile raf = new RandomAccessFile( file.toFile(), "r" ) )
+        {
+            raf.seek( from );
+            raf.readFully( buf );
+        }
+        return buf;
+    }
+
+    /**
+     * Delete every ROTATED (archived) log file — {@code application.log.1},
+     * {@code commands.log.2026-05-28}, … — from the log directory. The active
+     * logs ({@code application.log}, {@code error.log}, …) are kept: the
+     * {@link #ROTATED_FILE_PATTERN} only matches a {@code .log} name WITH a
+     * backup suffix. Returns the count + bytes freed.
+     */
+    @DELETE
+    @Path( "/old" )
+    public Response deleteOld()
+    {
+        java.nio.file.Path dir = logDirectory();
+        if ( !Files.isDirectory( dir ) )
+        {
+            return Response.ok( Map.of( "deleted", 0, "freedBytes", 0L ) ).build();
+        }
+        int  deleted = 0;
+        long freed   = 0L;
+        try ( Stream< java.nio.file.Path > files = Files.list( dir ) )
+        {
+            List< java.nio.file.Path > rotated = files
+                    .filter( Files::isRegularFile )
+                    .filter( p -> ROTATED_FILE_PATTERN.matcher( p.getFileName().toString() ).matches() )
+                    .toList();
+            for ( java.nio.file.Path p : rotated )
+            {
+                // Defence in depth — never step outside the log directory.
+                if ( !p.normalize().startsWith( dir ) )
+                { continue; }
+                try
+                {
+                    long sz = Files.size( p );
+                    Files.delete( p );
+                    deleted++;
+                    freed += sz;
+                    LOG.infof( "Deleted rotated log %s (%d bytes)", p.getFileName(), ( Long ) sz );
+                }
+                catch ( IOException e )
+                {
+                    LOG.warnf( e, "Could not delete rotated log %s — skipped", p );
+                }
+            }
+        }
+        catch ( IOException e )
+        {
+            LOG.warnf( e, "Could not list log directory %s for cleanup", dir );
+            return Response.serverError()
+                           .entity( Map.of( "status", "error", "reason", String.valueOf( e.getMessage() ) ) )
+                           .build();
+        }
+        LOG.infof( "Deleted %d rotated log file(s), freed %d bytes", ( Integer ) deleted, ( Long ) freed );
+        return Response.ok( Map.of( "deleted", deleted, "freedBytes", freed ) ).build();
     }
 
     /**

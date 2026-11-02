@@ -33,6 +33,7 @@ public class SessionTracker
 
     private final AtomicReference< SessionState >    stateRef       = new AtomicReference<>( SessionState.DISCONNECTED );
     private final AtomicReference< MiniserverToken > tokenRef       = new AtomicReference<>();
+    private final AtomicReference< Instant >         tokenAcquiredAt = new AtomicReference<>();
     private final AtomicReference< Instant >         stateChangedAt = new AtomicReference<>( Instant.now() );
     private final AtomicReference< String >          lastErrorRef   = new AtomicReference<>();
     private final AtomicReference< Instant >         connectedAtRef = new AtomicReference<>();
@@ -68,6 +69,14 @@ public class SessionTracker
     public Optional< MiniserverToken > token()
     {
         return Optional.ofNullable( tokenRef.get() );
+    }
+
+    /** Instant the current token was acquired — its "creation" time from the
+     *  binding's point of view. Updated only when the token string changes, so
+     *  a refresh that extends the same JWT preserves it. Empty when no token. */
+    public Optional< Instant > tokenAcquiredAt()
+    {
+        return Optional.ofNullable( tokenAcquiredAt.get() );
     }
 
     public Optional< String > lastError()
@@ -144,6 +153,7 @@ public class SessionTracker
             {
                 connectedAtRef.set( null );
                 tokenRef.set( null );
+                tokenAcquiredAt.set( null );
                 handshakeStartedAtRef.set( null );
             }
 
@@ -170,6 +180,18 @@ public class SessionTracker
 
     public void setToken( MiniserverToken token )
     {
-        tokenRef.set( token );
+        MiniserverToken prev = tokenRef.getAndSet( token );
+        if ( token == null )
+        {
+            tokenAcquiredAt.set( null );
+        }
+        else if ( prev == null || !prev.token().equals( token.token() ) )
+        {
+            // A genuinely new token (not a refresh that keeps the same JWT) →
+            // stamp its acquisition instant as the "created" time. A refresh
+            // that only extends validUntil keeps the same token string, so the
+            // original creation instant is preserved.
+            tokenAcquiredAt.set( Instant.now() );
+        }
     }
 }

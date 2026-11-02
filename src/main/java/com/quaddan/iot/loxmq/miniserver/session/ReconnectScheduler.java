@@ -218,6 +218,15 @@ public class ReconnectScheduler
     {
         var rc = config.miniserver().reconnect();
 
+        if ( policy == LoxoneCloseCode.ReconnectPolicy.OUT_OF_SERVICE )
+        {
+            // Fixed cadence for a Miniserver reboot / firmware update: the
+            // first attempt waits out the downtime, then a steady retry
+            // interval — no exponential growth, no jitter.
+            return attempts <= 1 ? rc.outOfService().initialDelay()
+                                 : rc.outOfService().retryInterval();
+        }
+
         if ( policy == LoxoneCloseCode.ReconnectPolicy.LONG_PAUSE )
         {
             return rc.maxDelay();

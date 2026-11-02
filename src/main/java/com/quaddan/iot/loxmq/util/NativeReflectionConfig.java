@@ -169,6 +169,10 @@ import io.quarkus.runtime.annotations.RegisterForReflection;
         // by default — only the WARN in the native log signals the issue.
         LoxApp3MetadataResolver.Topology.class,
         LoxApp3MetadataResolver.ControlInfo.class,
+        // /commands page — CommandSurface.controlStates (command-target UUID →
+        // its named StateRef list) is serialised the same manual way in
+        // CommandsPageResource to embed the per-control state list inline.
+        LoxApp3MetadataResolver.StateRef.class,
 
         // /api/v1/schedules — operating-mode calendar CRUD.
         // ScheduleEntry serialised in the response, ScheduleCreateRequest in

@@ -116,7 +116,9 @@ public class DashboardResource
                                                          BootstrapTracker bootstrap,
                                                          String bootstrapStatus,           // BootstrapStatus.name()
                                                          String sessionState,              // SessionState.name()
+                                                         String sessionStateSince,         // local time the state was entered
                                                          boolean brokerConnected,
+                                                         String mqttStateSince,            // local time the MQTT state (connected/not) was entered
                                                          // Health panel
                                                          boolean keepaliveScheduled,
                                                          Optional< Long > lastKeepaliveRttMs,
@@ -139,6 +141,7 @@ public class DashboardResource
                                                          Optional< Instant > tokenExpiresAt,
                                                          Optional< Boolean > tokenExpired,
                                                          Optional< Instant > nextTokenRefreshAt,
+                                                         Optional< Instant > tokenCreatedAt,
                                                          // SD-card self-test (jdev/sys/sdtest) — Miniserver
                                                          // Identity panel. sdCardPresent gates the row's
                                                          // OK/ERROR badge vs a "pending" placeholder; detail
@@ -146,14 +149,22 @@ public class DashboardResource
                                                          boolean sdCardPresent,
                                                          boolean sdCardHealthy,
                                                          String sdCardDetail,
+                                                         String sdCardCheckedAt,
                                                          // Firmware up-to-date check (Loxone updatecheck.xml).
                                                          // firmwareChecked gates the badge; latest is the newest
                                                          // published Release version for this generation.
                                                          boolean firmwareChecked,
                                                          boolean firmwareUpToDate,
-                                                         Optional< String > firmwareLatest );
+                                                         Optional< String > firmwareLatest,
+                                                         String firmwareCheckedAt );
     }
 
+    /**
+     * {@code GET /} — renders the operator dashboard HTML. Pre-computes the
+     * render timestamp and explodes the connection mode, identity, bootstrap,
+     * session, keepalive, token, SD-card and firmware state into flat template
+     * parameters (enums passed as {@code name()} strings) for the Qute page.
+     */
     @GET
     @Produces( MediaType.TEXT_HTML )
     public TemplateInstance dashboard()
@@ -189,7 +200,9 @@ public class DashboardResource
                                     bootstrapTracker,
                                     bootstrapTracker.status().name(),
                                     sessionTracker.state().name(),
+                                    DashboardTemplateExtensions.formatLocal( sessionTracker.stateChangedAt() ),
                                     mqtt.isConnected(),
+                                    mqtt.stateChangedAt().map( DashboardTemplateExtensions::formatLocal ).orElse( "" ),
                                     keepAliveScheduler.isScheduled(),
                                     keepAliveScheduler.lastRtt().map( d -> d.toMillis() ),
                                     rttBadgeClass( keepAliveScheduler.lastRtt().map( d -> d.toMillis() ).orElse( null ) ),
@@ -199,12 +212,15 @@ public class DashboardResource
                                     tokenOpt.map( t -> t.expiresAt() ),
                                     tokenOpt.map( t -> t.expired() ),
                                     tokenRefreshScheduler.nextRefreshAt(),
+                                    sessionTracker.tokenAcquiredAt(),
                                     sdOpt.isPresent(),
                                     sdOpt.map( SdCardStatus::healthy ).orElse( false ),
                                     sdOpt.map( SdCardStatus::detail ).orElse( "" ),
+                                    sdOpt.map( s -> DashboardTemplateExtensions.formatLocal( s.checkedAt() ) ).orElse( "" ),
                                     fwOpt.isPresent(),
                                     fwOpt.map( FirmwareUpdateService.Status::upToDate ).orElse( false ),
-                                    fwOpt.map( s -> s.latest().toString() ) );
+                                    fwOpt.map( s -> s.latest().toString() ),
+                                    fwOpt.map( s -> DashboardTemplateExtensions.formatLocal( s.checkedAt() ) ).orElse( "" ) );
     }
 
     /** Bucket the RTT (ms) into a CSS badge class. {@code "up"} for snappy

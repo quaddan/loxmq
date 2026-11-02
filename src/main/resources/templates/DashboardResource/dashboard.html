@@ -6,7 +6,7 @@
     <title>{appName} — dashboard</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <!-- i18n FR/EN/DE. -->
-    <script src="/js/i18n.js"></script>
+    <script src="/js/i18n.js?v={cacheBust}"></script>
     <!-- HTMX for live state polling -->
     <script src="https://unpkg.com/htmx.org@2.0.4"
             integrity="sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
@@ -180,6 +180,9 @@
            states (e.g. KeepAlive IDLE while disconnected) so they don't read
            as a fault. */
         .badge.muted { background: #6e7681; color: #fff; }
+        /* "tested/checked at …" freshness stamp — set apart on a dark-gray chip. */
+        .checked-chip { background: #000; color: #c9d1d9; padding: 0.1rem 0.4rem; border-radius: 4px;
+                        font-size: 0.68rem; white-space: nowrap; }
         /* Actions panel — split into Miniserver | MQTT side-by-side
            on wide screens, stacked on narrow. An earlier "one big bar"
            layout (.panel.actions { grid-column: 1/-1 }) was hard to scan
@@ -204,15 +207,20 @@
            panel. Each form full-width so the buttons stay readable. */
         .actions-stack form {
             display: block;
-            margin: 0 0 0.5rem 0;
+            margin: 0 0 1rem 0;
         }
         .actions-stack form:last-child { margin-bottom: 0; }
         .actions-stack button { width: 100%; }
+        /* The horizontal pair gap is 1rem globally (above). The Connexion panel
+           additionally gets more VERTICAL room between its stacked button rows —
+           scoped to .actions-stack so MQTT / Identity / Token keep the tighter
+           vertical default. */
+        .actions-stack .btn-pair { margin-bottom: 1rem; }
         /* Button pair — two actions side by side, equal width. Used for the
            connect / disconnect pairs (MQTT + Miniserver) and the Refresh /
            Kill token pair. The gap handles inter-button spacing, so the
            member forms carry no margin of their own. */
-        .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0 0 0.5rem 0; }
+        .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0 0 0.5rem 0; }
         .btn-pair:last-child { margin-bottom: 0; }
         .btn-pair form { display: block; margin: 0; }
         .btn-pair button { width: 100%; }
@@ -229,32 +237,51 @@
             border-color: var(--accent);
             font-weight: 600;
         }
-        button.btn-primary:hover { background: #79b8ff; border-color: #79b8ff; color: #000; }
+        /* Neutral action buttons default to the accent blue — consistent with
+           the rest of the app (Send on /commands, Refresh on /logs). Green
+           (connect) + red (stop/destructive) override below for semantics. */
         button {
-            background: var(--bg-panel-hover);
-            color: var(--fg);
-            border: 1px solid var(--border);
+            background: var(--accent);
+            color: #000;
+            /* 2px border reserved in EVERY state (same colour as the fill → looks
+               borderless) so the hover/focus recolour below never changes the
+               button's size — otherwise the auto-height button would grow 2px and
+               reflow the panel beneath it. */
+            border: 2px solid var(--accent);
             border-radius: 4px;
             padding: 0.5rem 1rem;
             font-size: 0.9rem;
             cursor: pointer;
+            transition: transform 0.06s ease;
         }
-        button:hover { background: var(--accent); color: #000; border-color: var(--accent); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         /* Connect / disconnect colour coding. Reuses the badge palette
            (--accent-up / --accent-down) for consistency with the status
            pills above the action panels. */
         button.btn-connect    { background: var(--accent-up);   color: #000; border-color: var(--accent-up);   }
-        button.btn-connect:hover    { background: #4ed26a; border-color: #4ed26a; color: #000; }
         button.btn-disconnect { background: #b62324; color: #fff; border-color: #b62324; }
-        button.btn-disconnect:hover { background: #cf2e2e; border-color: #cf2e2e; color: #fff; }
         /* Reboot is the single most destructive action on the page (full
            Miniserver restart). A deeper, darker red sets it apart from the
            merely "stop" reds (disconnect / kill token). Text stays white on
            hover — a dark red needs the contrast. */
         button.btn-reboot { background: #8b1a1a; color: #ffd33d; border-color: #8b1a1a; }
-        button.btn-reboot:hover { background: #a82424; border-color: #a82424; color: #ffd33d; }
+
+        /* Hover + focus feedback — keep each button's own fill, recolour ONLY the
+           (already-2px) border: WHITE on hover, GOLD (--accent-warn) on focus. No
+           width change → no size change → no panel reflow. Declared after the
+           colour-coded rules so it wins the equal-specificity tie; focus is last
+           so it beats hover when a button is both hovered and focused. :focus (not
+           :focus-visible) → shows on mouse hover/click and keyboard Tab alike. */
+        button:hover { border-color: #fff; }
+        /* outline:none on any focus → no default ring lingers after a mouse click
+           (a clicked button keeps :focus). The GOLD border is keyboard-only
+           (:focus-visible) so it never lingers after a click. */
+        button:focus { outline: none; }
+        button:focus-visible { border-color: var(--accent-warn); }
+        /* Click — nudge the button 1px down (+ a hair smaller) for a tactile
+           "pressed" feel. transform only → no layout reflow. */
+        button:active { transform: translateY(1px) scale(0.99); }
         /* Footer is a 2-column flex layout :
            meta (version/profile/rendered) on the LEFT, /q/* links
            on the RIGHT. Wraps on narrow viewports. */
@@ -288,9 +315,11 @@
         <nav class="tabs" aria-label="Navigation">
             <a href="/"          data-i18n="nav.dashboard" class="active">Dashboard</a>
             <a href="/states"    data-i18n="nav.states">States live</a>
+            <a href="/commands"  data-i18n="nav.commands">Commands</a>
             <a href="/schedules" data-i18n="nav.schedules">Schedules</a>
             <a href="/users"     data-i18n="nav.users">Users</a>
             <a href="/logs"      data-i18n="nav.logs">Logs</a>
+            <a href="/system"    data-i18n="nav.system">System</a>
         </nav>
         <!-- Language combobox. -->
         <select class="lang-switcher" data-i18n-switcher data-i18n-attr="title:lang.label">
@@ -341,6 +370,7 @@
                         {#else}
                             <span class="badge warn">{sessionState}</span>
                         {/if}
+                        <span class="meta checked-chip"><span data-i18n="dashboard.session.since">since</span> {sessionStateSince}</span>
                     </dd>
                 </dl>
 
@@ -348,7 +378,7 @@
 
                 <!-- Session actions, grouped into the Connection panel.
                      Connect / Disconnect side by side (btn-pair); Force
-                     reconnect + Reboot stacked below via .actions-stack.
+                     reconnect + Reboot side by side (btn-pair) below.
                      "Connect to Miniserver" (green) is the primary action —
                      it calls the atomic POST /api/v1/connect-with-bootstrap
                      which chains bootstrap + connect in one operator gesture. -->
@@ -364,30 +394,34 @@
                         <button type="submit" class="btn-disconnect" data-i18n="dashboard.btn.disconnect">Disconnect from Miniserver</button>
                     </form>
                 </div>
-                <form hx-post="/api/v1/reconnect"
-                      hx-target="#action-feedback"
-                      hx-swap="innerHTML">
-                    <button type="submit" data-i18n="dashboard.btn.reconnect">Force reconnect</button>
-                </form>
-                <!-- Reboot: destructive — restarts the whole Miniserver
-                     (~30–60 s downtime; the WS session drops and
-                     ReconnectScheduler recovers it). hx-confirm gates it
-                     behind a browser confirm() dialog; the English text here
-                     is a fallback, localized at runtime via data-i18n-attr.
-                     Dark red (btn-reboot) — a deeper red than disconnect /
-                     kill token, since this is the most destructive action.
+                <!-- Force reconnect + Reboot side by side (btn-pair). Reboot is
+                     destructive — restarts the whole Miniserver (~30–60 s
+                     downtime; the WS session drops and ReconnectScheduler
+                     recovers it). hx-confirm gates it behind a browser confirm()
+                     dialog (English fallback, localized via data-i18n-attr).
+                     Dark red (btn-reboot) — the most destructive action.
                      POSTs jdev/sps/restart via /api/v1/reboot. -->
-                <form hx-post="/api/v1/reboot"
-                      hx-target="#action-feedback"
-                      hx-swap="innerHTML"
-                      hx-confirm="Reboot the Miniserver? All connections will drop for ~30–60 s while it restarts."
-                      data-i18n-attr="hx-confirm:dashboard.btn.rebootConfirm">
-                    <button type="submit" class="btn-reboot" data-i18n="dashboard.btn.reboot">Reboot Miniserver</button>
-                </form>
+                <div class="btn-pair">
+                    <form hx-post="/api/v1/reconnect"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" data-i18n="dashboard.btn.reconnect">Force reconnect</button>
+                    </form>
+                    <form hx-post="/api/v1/reboot"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML"
+                          hx-confirm="Reboot the Miniserver? All connections will drop for ~30–60 s while it restarts."
+                          data-i18n-attr="hx-confirm:dashboard.btn.rebootConfirm">
+                        <button type="submit" class="btn-reboot" data-i18n="dashboard.btn.reboot">Reboot Miniserver</button>
+                    </form>
+                </div>
             </section>
 
-            <!-- Miniserver Identity — populated after bootstrap. -->
-            <section class="panel">
+            <!-- Miniserver Identity — populated after bootstrap. The on-demand
+                 firmware / SD-card buttons live here; the panel carries `actions`
+                 so the afterRequest auto-reload fires and the Version / SD card
+                 rows above refresh with the fresh result. -->
+            <section class="panel actions">
                 <h2 class="with-icon">
                     <img src="/images/loxone-miniserver.png" alt="Loxone Miniserver">
                     <span><span data-i18n="dashboard.panel.miniserver">Miniserver</span> — <span data-i18n="dashboard.panel.identity">Identity</span></span>
@@ -395,7 +429,7 @@
                 <dl>
                     {#if identity.isPresent()}
                     <dt data-i18n="dashboard.dt.serial">Serial</dt>     <dd>{identity.get().serial}</dd>
-                    <dt data-i18n="dashboard.dt.version">Version</dt>    <dd>{#if firmwareChecked}{#if firmwareUpToDate}<span class="badge up" data-i18n="dashboard.fw.upToDate">up to date</span> {identity.get().version}{#else}<span class="badge warn" data-i18n="dashboard.fw.updateAvailable">update available</span> {identity.get().version} → {firmwareLatest.get()}{/if}{#else}{identity.get().version}{/if}</dd>
+                    <dt data-i18n="dashboard.dt.version">Version</dt>    <dd>{#if firmwareChecked}{#if firmwareUpToDate}<span class="badge up" data-i18n="dashboard.fw.upToDate">up to date</span> {identity.get().version}{#else}<span class="badge warn" data-i18n="dashboard.fw.updateAvailable">update available</span> {identity.get().version} → {firmwareLatest.get()}{/if} <span class="meta checked-chip"><span data-i18n="dashboard.firmware.checkedAt">checked at</span> {firmwareCheckedAt}</span>{#else}{identity.get().version}{/if}</dd>
                     <dt data-i18n="dashboard.dt.generation">Generation</dt> <dd><span class="badge up">{identity.get().generation}</span></dd>
                     <dt data-i18n="dashboard.dt.https">HTTPS</dt>      <dd>
                         {#switch identityHttpsStatus.orElse('UNKNOWN')}
@@ -410,6 +444,7 @@
                         {#if sdCardPresent}
                             {#if sdCardHealthy}<span class="badge up" data-i18n="dashboard.sdcard.ok">OK</span>{#else}<span class="badge down" data-i18n="dashboard.sdcard.error">ERROR</span>{/if}
                             <span class="meta">{sdCardDetail}</span>
+                            <span class="meta checked-chip"><span data-i18n="dashboard.sdcard.checkedAt">tested at</span> {sdCardCheckedAt}</span>
                         {#else}
                             <span class="badge warn" data-i18n="dashboard.sdcard.pending">PENDING</span>
                         {/if}
@@ -418,6 +453,25 @@
                     <dt data-i18n="dashboard.dt.status">Status</dt>     <dd><span class="badge warn">UNRESOLVED</span> <span data-i18n="dashboard.tag.unresolved">— bootstrap (jdev/cfg/apiKey) hasn't landed yet.</span></dd>
                     {/if}
                 </dl>
+
+                <hr>
+
+                <!-- Check firmware (left) + Run SD-card test (right), on demand,
+                     side by side via .btn-pair. Both POST to their endpoint; the
+                     .panel.actions afterRequest handler reloads so the Version /
+                     SD card rows above refresh with the fresh result. -->
+                <div class="btn-pair">
+                    <form hx-post="/api/v1/firmware/check"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" data-i18n="dashboard.btn.firmwareCheck">Check firmware</button>
+                    </form>
+                    <form hx-post="/api/v1/sdcard/test"
+                          hx-target="#action-feedback"
+                          hx-swap="innerHTML">
+                        <button type="submit" data-i18n="dashboard.btn.sdcardTest">Run SD-card test</button>
+                    </form>
+                </div>
             </section>
 
         </div><!-- /.dashboard-col Miniserver -->
@@ -451,6 +505,7 @@
                         {#else}
                             <span class="badge down" data-i18n="users.option.no">NO</span>
                         {/if}
+                        {#if mqttStateSince}<span class="meta checked-chip"><span data-i18n="dashboard.session.since">since</span> {mqttStateSince}</span>{/if}
                     </dd>
                 </dl>
 
@@ -521,6 +576,7 @@
                 </h2>
                 <dl>
                     {#if tokenPresent}
+                    <dt data-i18n="dashboard.dt.createdAt">Created at</dt>  <dd>{#if tokenCreatedAt.isPresent()}{tokenCreatedAt.get().formatLocal}{#else}<span class="badge muted">—</span>{/if}</dd>
                     <dt data-i18n="dashboard.dt.expiresAt">Expires at</dt>  <dd>{tokenExpiresAt.get().formatLocal}</dd>
                     <dt data-i18n="dashboard.dt.nextRefresh">Next refresh</dt>  <dd>{#if nextTokenRefreshAt.isPresent()}{nextTokenRefreshAt.get().formatLocal}{#else}<span class="badge muted">—</span>{/if}</dd>
                     <dt data-i18n="dashboard.dt.status">Status</dt>      <dd>

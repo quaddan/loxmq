@@ -94,9 +94,11 @@ public class MqttMetrics
     static final String M_HANDSHAKE_TIMER  = "binding.miniserver.handshake.duration";
     static final String M_RTT_TIMER        = "binding.miniserver.keepalive.rtt";
 
-    public static final String REASON_RETAINED  = "retained";
-    public static final String REASON_OVERSIZED = "oversized";
-    public static final String REASON_MALFORMED = "malformed";
+    public static final String REASON_RETAINED   = "retained";
+    public static final String REASON_OVERSIZED  = "oversized";
+    public static final String REASON_MALFORMED  = "malformed";
+    public static final String REASON_QUEUE_FULL = "queue_full";
+    public static final String REASON_DISABLED   = "disabled";
 
     @Inject
     MeterRegistry      registry;
@@ -114,6 +116,8 @@ public class MqttMetrics
     private Counter dropRetainedCounter;
     private Counter dropOversizedCounter;
     private Counter dropMalformedCounter;
+    private Counter dropQueueFullCounter;
+    private Counter dropDisabledCounter;
     private Timer   handshakeTimer;
     private Timer   keepaliveRttTimer;
 
@@ -128,6 +132,8 @@ public class MqttMetrics
         dropRetainedCounter  = dropCounter( REASON_RETAINED );
         dropOversizedCounter = dropCounter( REASON_OVERSIZED );
         dropMalformedCounter = dropCounter( REASON_MALFORMED );
+        dropQueueFullCounter = dropCounter( REASON_QUEUE_FULL );
+        dropDisabledCounter  = dropCounter( REASON_DISABLED );
 
         handshakeTimer = Timer.builder( M_HANDSHAKE_TIMER )
                               .description( "Miniserver session handshake duration (CONNECTING → RUNNING)" )
@@ -190,9 +196,11 @@ public class MqttMetrics
             case REASON_RETAINED -> dropRetainedCounter.increment();
             case REASON_OVERSIZED -> dropOversizedCounter.increment();
             case REASON_MALFORMED -> dropMalformedCounter.increment();
+            case REASON_QUEUE_FULL -> dropQueueFullCounter.increment();
+            case REASON_DISABLED -> dropDisabledCounter.increment();
             default -> LOG.warnf( "Unknown drop reason '%s' — counter NOT incremented. "
-                                  + "Use one of: %s, %s, %s.",
-                                  reason, REASON_RETAINED, REASON_OVERSIZED, REASON_MALFORMED );
+                                  + "Use one of: %s, %s, %s, %s, %s.",
+                                  reason, REASON_RETAINED, REASON_OVERSIZED, REASON_MALFORMED, REASON_QUEUE_FULL, REASON_DISABLED );
         }
     }
 

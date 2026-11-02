@@ -276,6 +276,89 @@ the binding. Re-run when NVD is healthy with a free NVD API key
 (`export NVD_API_KEY=…` then add `-Dnvd.api.key=$NVD_API_KEY` to the §2
 command) — a healthy NVD build then takes ~2-3 min instead of ~45.
 
+### 3.8 Application surface — v1.2.0 changes
+
+v1.2.0 adds an **active command surface** plus a few operator actions on the
+same unauthenticated, LAN-only home (§11.h / no bearer auth):
+
+- **New write endpoint `POST /api/v1/commands` `{uuid, command}`** — encrypts
+  and forwards the command to the Miniserver over the **existing** WebSocket
+  session (it actuates a real device). No new egress: the command goes to the
+  Miniserver, never to the internet, and `uuid`/`command` are sent as-is on the
+  encrypted WS. This is the first *write to physical devices* exposed on the
+  unauthenticated surface — it raises the stakes of the "if ever exposed, add a
+  uniform session filter on **all** routes" decision, though the LAN+VPN
+  posture is unchanged.
+- **Inbound-command defence-in-depth.** Inbound MQTT commands (`…/command`,
+  `…/api`) are now dispatched on a **bounded single-thread queue off the Netty
+  event loop** (`loxone.transport.security.inbound-queue-capacity`, default
+  256). A flood can no longer block the HiveMQ reader thread; overflow is
+  dropped with a `DROP-QUEUE-FULL` verdict + a `queue_full` drop metric. A
+  **runtime kill-switch** (`PUT /api/v1/commands/inbound {enabled:false}`)
+  drops inbound commands entirely (`DROP-DISABLED`) without tearing down the
+  broker connection — a containment control for a misbehaving downstream
+  publisher. In-memory (resets to enabled on restart).
+- **`DELETE /api/v1/logs/old`** — removes only *rotated* backups
+  (`name.log.1`, `name.log.2026-05-28`): `ROTATED_FILE_PATTERN` requires a
+  backup suffix, so an active `name.log` can never match, and a defence-in-depth
+  `startsWith(logDirectory)` check refuses any path escaping the log directory.
+- **On-demand diagnostics** (`POST /api/v1/sdcard/test`,
+  `POST /api/v1/firmware/check`) — operator-triggered versions of the automatic
+  RUNNING-time checks. The firmware check reuses the **same hard-coded**
+  `update.loxone.com` egress fully analysed in §1.2 (no SSRF, full TLS, no data
+  sent); it adds no new egress.
+- **New diagnostic endpoint `POST /api/v1/system-command` `{command}`** (the
+  `/system` page) — runs a catalogued `jdev` diagnostic command over the
+  authenticated HTTPS admin channel and returns the raw `LL` reply (no new
+  egress: it goes to the Miniserver only). **Containment:** `SystemCommandRegistry`
+  is a **server-side allow-list** derived from the curated catalogue
+  (`system-commands.json`) — a command runs only if listed (fail-closed, no regex
+  blocklist), so user-management / token / crypto commands can never be routed
+  here even though they share the `jdev/sys/` namespace. It does expose a few
+  destructive device actions (`reboot`, `logoff`, PLC `restart`), gated by a UI
+  confirm but — like the rest of this surface — not by auth; the LAN+VPN posture
+  and the "uniform session filter if ever exposed" decision apply equally here.
+
+No new outbound internet egress and no new Maven dependency were introduced by
+1.2.0 (the one egress remains the §1.2 firmware check), so the §3.2 CVE verdicts
+are unaffected by these application-code changes.
+
+### 3.9 Formal scan run — 2026-11-01 (loxmq 1.2.0, Quarkus 3.40.1.1)
+
+Ran the §2 reproducible commands against the 1.2.0 tree (Quarkus **3.40.1.1**,
+`target/quarkus-app/` populated), via Trivy 0.70.0 (trivy-db freshly pulled):
+
+| Scan                                            | Result                                                                     |
+|-------------------------------------------------|----------------------------------------------------------------------------|
+| **Trivy** `fs --scanners vuln` (HIGH, CRITICAL) | `pom.xml` → **0 vulnerabilities**. Reproduces §3.1/§3.7.                    |
+| **Trivy** `fs --scanners secret`                | 1 HIGH `AsymmetricPrivateKey` at `certs/privkey.pem` → **false positive** — `git ls-files certs/` is empty (nothing tracked; local operator-side cert copy). Reproduces §3.3. |
+| **OWASP Dependency-Check** full pass            | **Not run this pass** (still NVD/API-key-gated — see §3.7). The dependency-tree delta below covers the transitive-version check for this release. |
+
+Trivy's `pom` analyzer still can't resolve the BOM-managed versions (it warns
+*"Dependency version cannot be determined — child dependencies will not be
+found"*), so the direct `pom.xml` scan only covers explicitly-versioned deps.
+The **transitive** check is the dependency-tree delta (`./mvnw dependency:tree`,
+369 resolved nodes) — every flagged component moved **forward or stayed put**
+(risk only decreases):
+
+| Component                                     | §3.5 (3.37.0)   | 3.40.1.1              | Effect on verdict                      |
+|-----------------------------------------------|-----------------|-----------------------|----------------------------------------|
+| `netty-*` (codec-mqtt, transport, …)          | 4.1.135.Final   | **4.1.139.Final**     | still 4.1.x — #15/#16 (QPACK/HTTP3, not exploitable) stand |
+| `hibernate-validator`                         | 9.1.0.Final     | **9.1.5.Final**       | #2/#3/#4/#5 stand (CPE confusion, FP)  |
+| `micrometer-registry-prometheus-simpleclient` | 1.16.6          | **1.17.1**            | client lib — #1/#13 stand (FP)         |
+| `io.prometheus:simpleclient`                  | 0.16.0          | 0.16.0                | unchanged — #14 stands (FP)            |
+| `protobuf-java`                               | 4.35.0          | 4.35.0                | unchanged — #12 stands (FP — Python)   |
+| `opentelemetry-semconv` [`-incubating`]       | 1.40.0 / -alpha | **1.41.1** / 1.40.0-alpha | #6–#11 stand (FP — OpenTelemetry-Go) |
+| `jackson-databind` / `-core`                  | (BOM)           | **2.21.7**            | current line, no open CVE              |
+| `quarkus-*` artifacts                         | 3.37.0          | **3.40.1.1**          | CPE-confusion source for #2/#4 (FP)    |
+
+**Net**: Trivy direct scan **0 HIGH/CRITICAL**; secret hit is the known
+`privkey.pem` false positive; no new flagged transitive component and no new
+Maven dependency (§3.8); all flagged components bumped forward or unchanged. So
+the §3.2 verdicts stand verbatim: **0 actionable CVE** on the 3.40.1.1 stack.
+The full OWASP pass remains the only outstanding item, blocked solely by NVD
+API availability / a missing key — re-run per §4.1.3 when a key is provisioned.
+
 ## 4. Recommendations
 
 ### 4.1 Continuous maintenance
@@ -302,8 +385,8 @@ command) — a healthy NVD build then takes ~2-3 min instead of ~45.
 Findings #15 + #16 (CVE-2026-42582) clear at Netty ≥ 4.2.13.Final. The
 Quarkus BOM deliberately keeps Netty on the **4.1.x line** (4.2.x broke the
 HTTP pipeline — see the `netty-codec-http` note in `pom.xml`), and the
-3.37.0 re-verification (§3.5) confirms it is now `4.1.135.Final` (still
-4.1.x — bumped from 4.1.133, but not to the 4.2.13+ that closes the
+3.40.1.1 re-verification (§3.9) confirms it is now `4.1.139.Final` (still
+4.1.x — bumped from 4.1.135, but not to the 4.2.13+ that closes the
 finding). So these two findings do **not** auto-resolve on the 3.3x line;
 revisit when a future BOM ships 4.2.13+ without the pipeline regression.
 **Not urgent** — non-exploitable in our usage (no HTTP/3 / QPACK path).
@@ -368,7 +451,8 @@ exploitable surface in `loxmq`.
 
 ---
 
-*Baseline document v1.0.0 (2026-05-30); last updated 2026-06-25 for
-loxmq 1.1.0 (§1.2 firmware egress, §3.5 Quarkus 3.37.0 re-verification,
-§3.6 application-surface review, §3.7 formal Trivy scan run). Keep in
-sync with CVE audits.*
+*Baseline document v1.0.0 (2026-05-30); updated 2026-06-25 for loxmq 1.1.0
+(§1.2 firmware egress, §3.5 Quarkus 3.37.0 re-verification, §3.6
+application-surface review, §3.7 formal Trivy scan run); last updated
+2026-11-01 for loxmq 1.2.0 (§3.8 active command surface + inbound-command
+defence-in-depth). Keep in sync with CVE audits.*

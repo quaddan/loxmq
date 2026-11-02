@@ -18,13 +18,18 @@ import com.quaddan.iot.loxmq.miniserver.connection.ConnectionModeResolver;
 import com.quaddan.iot.loxmq.miniserver.connection.EndpointResolver;
 import com.quaddan.iot.loxmq.miniserver.identity.MiniserverIdentity;
 import com.quaddan.iot.loxmq.miniserver.session.TokenRefreshScheduler;
+import com.quaddan.iot.loxmq.miniserver.state.FirmwareUpdateService;
 import com.quaddan.iot.loxmq.miniserver.state.MiniserverState;
+import com.quaddan.iot.loxmq.miniserver.state.SdCardHealthService;
 import com.quaddan.iot.loxmq.transport.MqttClient;
 import com.quaddan.iot.loxmq.transport.TransportException;
 import com.quaddan.iot.loxmq.transport.connection.TransportConnectionResolver;
+import com.quaddan.iot.loxmq.transport.subscribe.InboundCommandGate;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
@@ -100,6 +105,15 @@ public class ManagementResource
     SessionTracker sessionTracker;
 
     @Inject
+    InboundCommandGate inboundGate;
+
+    @Inject
+    SdCardHealthService sdCardHealth;
+
+    @Inject
+    FirmwareUpdateService firmwareUpdateService;
+
+    @Inject
     TransportConnectionResolver transportResolver;
 
     @Inject
@@ -120,6 +134,9 @@ public class ManagementResource
     @Inject
     MiniserverAdminCommandClient adminClient;
 
+    @Inject
+    SystemCommandRegistry systemCommands;
+
     /** loxmq's own artifact version, injected by Quarkus from the Maven build.
      *  Surfaced at the root of {@code GET /api/v1/state} so an operator can
      *  confirm which binding release produced a given snapshot. The
@@ -128,6 +145,17 @@ public class ManagementResource
     @ConfigProperty( name = "quarkus.application.version", defaultValue = "unknown" )
     String bindingVersion;
 
+    /**
+     * {@code GET /api/v1/state} — aggregated runtime snapshot of the binding.
+     * <p>
+     * Read-only. Assembles a JSON object with {@code timestamp}, {@code miniserver}
+     * (host/port/secure preference + resolved mode + endpoints + downgrade reason +
+     * app uuid/info + parsed identity + {@code sessionEstablished}), {@code bootstrap}
+     * (status/timings/lastError), {@code session} (state + token + loxApp3 cache +
+     * reconnect + tokenRefresh blocks), {@code broker} (config + effective scheme/uri +
+     * live {@code connected}), {@code health} (keepalive RTT, last handshake duration)
+     * and loxmq's own {@code version}. No side effects. Always HTTP 200.
+     */
     @GET
     @Path( "/state" )
     @Operation( summary = "Snapshot of the binding state",
@@ -231,6 +259,15 @@ public class ManagementResource
         return root;
     }
 
+    /**
+     * {@code POST /api/v1/bootstrap} — run the Miniserver HTTP bootstrap synchronously.
+     * <p>
+     * Calls {@code bootstrap.run()} (hits {@code jdev/cfg/apiKey} + {@code jdev/sys/getPublicKey},
+     * populates MiniserverState and loads the RSA public key). Idempotent — re-runs the full
+     * sequence each time. On success: HTTP 200 with the parsed identity (serial, version,
+     * generation, httpsStatus) + {@code effectiveMode} + {@code durationMs}. On
+     * {@link BootstrapException}: HTTP 502 ({@code BAD_GATEWAY}) with the error message (logged WARN).
+     */
     @POST
     @Path( "/bootstrap" )
     @Operation( summary = "Run the Miniserver HTTP bootstrap",
@@ -286,6 +323,15 @@ public class ManagementResource
                               .orElse( null );
     }
 
+    /**
+     * {@code POST /api/v1/connect} — open the WebSocket session and run the handshake.
+     * <p>
+     * Calls {@code session.connectAndWait(timeout)} (ws/wss connect + keyexchange + getkey2 +
+     * getjwt). Requires a prior bootstrap (loaded public key). On success: HTTP 200 with
+     * {@code state} + acquired token metadata (expiresAt, tokenRights, unsecurePass). On
+     * {@link SessionException}: HTTP 502 ({@code BAD_GATEWAY}) with the error + current state
+     * (logged WARN). Opens a live WS session to the Miniserver.
+     */
     @POST
     @Path( "/connect" )
     @Operation( summary = "Open the WebSocket session and run the handshake",
@@ -323,6 +369,13 @@ public class ManagementResource
         }
     }
 
+    /**
+     * {@code POST /api/v1/disconnect} — close the WebSocket session cleanly.
+     * <p>
+     * Calls {@code session.disconnect(...)} (normal-closure close frame, drops the session).
+     * Idempotent — no-op if already disconnected. Always HTTP 200 with {@code status=ok} +
+     * current {@code state}.
+     */
     @POST
     @Path( "/disconnect" )
     @Operation( summary = "Close the WebSocket session cleanly",
@@ -336,6 +389,13 @@ public class ManagementResource
                 "state", sessionTracker.state().name() ) ).build();
     }
 
+    /**
+     * {@code POST /api/v1/reconnect} — force a fresh Miniserver session.
+     * <p>
+     * Calls {@code session.disconnect(...)} then delegates to {@link #connect()}, so the
+     * response + status codes are exactly those of {@code POST /api/v1/connect} (200 on success,
+     * 502 on handshake failure). Drops and re-establishes the live WS session.
+     */
     @POST
     @Path( "/reconnect" )
     @Operation( summary = "Force a Miniserver reconnect — disconnect + connect in one call",
@@ -348,6 +408,236 @@ public class ManagementResource
         return connect();
     }
 
+    /**
+     * {@code POST /api/v1/commands} — send a command to a Loxone control.
+     * <p>
+     * Encrypts and forwards {@code uuid/command} over the active WS session via
+     * {@code session.sendCommand(...)} — actuates a real device. Validates the body first.
+     *
+     * @param req JSON body ({@link CommandRequest}); {@code uuid} and {@code command} are both required/non-blank.
+     *
+     * Responses: HTTP 400 ({@code BAD_REQUEST}) when uuid/command missing or blank; 200 on
+     * {@code SENT} (echoes uuid+command); 409 ({@code CONFLICT}) on {@code NOT_RUNNING} (with
+     * current state); 502 ({@code BAD_GATEWAY}) on {@code SEND_FAILED}.
+     */
+    @POST
+    @Path( "/commands" )
+    @Consumes( MediaType.APPLICATION_JSON )
+    @Operation( summary = "Send a command to a Loxone control",
+                description = "Encrypts and forwards {uuid}/{command} to the Miniserver over the active " +
+                              "WebSocket session (synchronous — returns the send outcome). Backs the " +
+                              "Commands page. NOTE: this actuates a real device." )
+    public Response sendCommand( CommandRequest req )
+    {
+        if ( req == null || req.uuid() == null || req.uuid().isBlank()
+             || req.command() == null || req.command().isBlank() )
+        {
+            return Response.status( Response.Status.BAD_REQUEST )
+                           .entity( Map.of( "status", "error", "reason", "uuid and command are required" ) )
+                           .build();
+        }
+        SessionOrchestrator.SendResult result = session.sendCommand( req.uuid().trim(), req.command().trim() );
+        return switch ( result )
+        {
+            case SENT        -> Response.ok( Map.of( "status", "ok",
+                                                     "uuid", req.uuid().trim(),
+                                                     "command", req.command().trim() ) ).build();
+            case NOT_RUNNING -> Response.status( Response.Status.CONFLICT )
+                                        .entity( Map.of( "status", "error",
+                                                         "reason", "session not RUNNING",
+                                                         "state", sessionTracker.state().name() ) ).build();
+            case SEND_FAILED -> Response.status( Response.Status.BAD_GATEWAY )
+                                        .entity( Map.of( "status", "error",
+                                                         "reason", "send failed (see commands.log)" ) ).build();
+        };
+    }
+
+    /**
+     * {@code POST /api/v1/system-command} — run a Miniserver SYSTEM / PLC /
+     * CONFIG / CAN-bus diagnostic command and return the Miniserver's raw
+     * {@code LL} JSON reply verbatim.
+     * <p>
+     * The command must appear in the curated catalogue
+     * ({@code system-commands.json}) — the backend {@link SystemCommandRegistry}
+     * is the single allow-list, so user-management, token and crypto commands
+     * can never be routed here even though they share the {@code jdev/sys/}
+     * namespace. Sent via
+     * {@link MiniserverAdminCommandClient#sendResolvedPath} (authenticated HTTPS
+     * GET on the session token). 400 on a blank / unlisted command, 409 when the
+     * session is not RUNNING, 502 on a Miniserver / transport error.
+     */
+    @POST
+    @Path( "/system-command" )
+    @Consumes( MediaType.APPLICATION_JSON )
+    @Operation( summary = "Run a catalogued jdev diagnostic command; return the raw LL reply" )
+    public Response systemCommand( SystemCommandRequest req )
+    {
+        String cmd = req != null && req.command() != null ? req.command().trim() : "";
+        if ( cmd.isBlank() )
+        {
+            return Response.status( Response.Status.BAD_REQUEST )
+                           .entity( Map.of( "status", "error", "reason", "command is required" ) ).build();
+        }
+        // The curated catalogue is the authority: only commands listed in
+        // system-commands.json (exact, or the <cmd>/<value> form of a
+        // parameterised one) may run — nothing else, by construction.
+        if ( !systemCommands.isAllowed( cmd ) )
+        {
+            return Response.status( Response.Status.BAD_REQUEST )
+                           .entity( Map.of( "status", "error",
+                                            "reason", "command is not in the system-command catalogue",
+                                            "command", cmd ) ).build();
+        }
+        try
+        {
+            JsonNode ll = adminClient.sendResolvedPath( cmd, Duration.ofSeconds( 8 ) );
+            return Response.ok( ll ).build();
+        }
+        catch ( IllegalStateException e )
+        {
+            return Response.status( Response.Status.CONFLICT )
+                           .entity( Map.of( "status", "error", "reason", String.valueOf( e.getMessage() ),
+                                            "state", sessionTracker.state().name() ) ).build();
+        }
+        catch ( AdminCommandException e )
+        {
+            return Response.status( Response.Status.BAD_GATEWAY )
+                           .entity( Map.of( "status", "error", "reason", String.valueOf( e.getMessage() ),
+                                            "command", cmd ) ).build();
+        }
+    }
+
+    /** Request body for {@code POST /api/v1/system-command}. */
+    public record SystemCommandRequest( String command )
+    {
+    }
+
+    /** Request body for {@code POST /api/v1/commands}. */
+    public record CommandRequest( String uuid, String command )
+    {
+    }
+
+    /**
+     * {@code GET /api/v1/commands/inbound} — report whether inbound MQTT command processing is enabled.
+     * <p>
+     * Read-only; reads the in-memory {@link InboundCommandGate}. Always HTTP 200 with
+     * {@code {"enabled": <bool>}}.
+     */
+    @GET
+    @Path( "/commands/inbound" )
+    @Operation( summary = "Whether inbound (MQTT) command processing is enabled" )
+    public Response inboundStatus()
+    {
+        return Response.ok( Map.of( "enabled", inboundGate.isEnabled() ) ).build();
+    }
+
+    /**
+     * {@code PUT /api/v1/commands/inbound} — toggle inbound MQTT command processing.
+     * <p>
+     * Sets the in-memory {@link InboundCommandGate} (resets to enabled on restart). When disabled,
+     * commands on the inbound topics are dropped instead of forwarded; does not affect this
+     * resource's own {@code POST /commands}.
+     *
+     * @param req JSON body ({@link InboundRequest}); {@code enabled} (Boolean) is required.
+     *
+     * Responses: HTTP 400 ({@code BAD_REQUEST}) when body/enabled missing; 200 echoing the new
+     * {@code {"enabled": <bool>}} state.
+     */
+    @PUT
+    @Path( "/commands/inbound" )
+    @Consumes( MediaType.APPLICATION_JSON )
+    @Operation( summary = "Enable/disable inbound (MQTT) command processing",
+                description = "When disabled, commands received on …/command and …/api are dropped " +
+                              "(DROP-DISABLED) instead of being forwarded to the Miniserver. In-memory — " +
+                              "resets to enabled on restart. Does NOT affect the Commands page's own sends." )
+    public Response setInbound( InboundRequest req )
+    {
+        if ( req == null || req.enabled() == null )
+        {
+            return Response.status( Response.Status.BAD_REQUEST )
+                           .entity( Map.of( "status", "error", "reason", "enabled (boolean) is required" ) )
+                           .build();
+        }
+        inboundGate.setEnabled( req.enabled() );
+        return Response.ok( Map.of( "enabled", inboundGate.isEnabled() ) ).build();
+    }
+
+    /** Request body for {@code PUT /api/v1/commands/inbound}. */
+    public record InboundRequest( Boolean enabled )
+    {
+    }
+
+    /**
+     * {@code POST /api/v1/sdcard/test} — run the SD-card self-test on demand.
+     * <p>
+     * Calls {@code sdCardHealth.runSelfTest()} (triggers the Miniserver self-test). On empty
+     * result: HTTP 502 ({@code BAD_GATEWAY}) with a failure reason. On success: HTTP 200 with
+     * {@code healthy}, {@code detail} and {@code checkedAt}.
+     */
+    @POST
+    @Path( "/sdcard/test" )
+    @Operation( summary = "Run the SD-card self-test now (jdev/sys/sdtest)",
+                description = "Triggers an on-demand SD-card self-test on the Miniserver and returns the " +
+                              "fresh result. Lets the operator re-run it any time without restarting LoxMQ " +
+                              "(it otherwise runs once automatically on each RUNNING transition)." )
+    public Response runSdCardTest()
+    {
+        var result = sdCardHealth.runSelfTest();
+        if ( result.isEmpty() )
+        {
+            return Response.status( Response.Status.BAD_GATEWAY )
+                           .entity( Map.of( "status", "error",
+                                            "reason", "SD-card self-test failed or was rejected (see logs)" ) )
+                           .build();
+        }
+        var status = result.get();
+        return Response.ok( Map.of( "status", "ok",
+                                    "healthy", status.healthy(),
+                                    "detail", status.detail(),
+                                    "checkedAt", status.checkedAt().toString() ) ).build();
+    }
+
+    /**
+     * {@code POST /api/v1/firmware/check} — run the firmware-version check on demand.
+     * <p>
+     * Calls {@code firmwareUpdateService.runCheck()} (fetches Loxone's public {@code updatecheck.xml}).
+     * On empty result (check failed or no Miniserver identity yet): HTTP 502 ({@code BAD_GATEWAY})
+     * with a reason. On success: HTTP 200 with {@code upToDate}, {@code latest} and {@code checkedAt}.
+     */
+    @POST
+    @Path( "/firmware/check" )
+    @Operation( summary = "Check the latest available Miniserver firmware now (updatecheck.xml)",
+                description = "Triggers an on-demand firmware-version check against Loxone's public " +
+                              "updatecheck.xml and returns the fresh result. Lets the operator re-run it " +
+                              "any time without restarting LoxMQ (it otherwise runs once per RUNNING transition)." )
+    public Response runFirmwareCheck()
+    {
+        var result = firmwareUpdateService.runCheck();
+        if ( result.isEmpty() )
+        {
+            return Response.status( Response.Status.BAD_GATEWAY )
+                           .entity( Map.of( "status", "error",
+                                            "reason", "firmware check failed or no Miniserver identity yet (see logs)" ) )
+                           .build();
+        }
+        var status = result.get();
+        return Response.ok( Map.of( "status", "ok",
+                                    "upToDate", status.upToDate(),
+                                    "latest", status.latest().toString(),
+                                    "checkedAt", status.checkedAt().toString() ) ).build();
+    }
+
+    /**
+     * {@code POST /api/v1/reboot} — reboot the Miniserver.
+     * <p>
+     * Sends {@code jdev/sps/restart} over the HTTPS + autht admin channel via
+     * {@code adminClient.sendAndAwait("restart", 8s)} + {@code requireOk}. Gated on
+     * {@code SessionState.RUNNING} (a valid JWT is needed to sign the autht). Restarts the device
+     * (~30–60 s downtime); the session auto-reconnects afterwards. Logs INFO on acceptance.
+     *
+     * Responses: HTTP 409 ({@code CONFLICT}) when state != RUNNING; 200 on acceptance; 502
+     * ({@code BAD_GATEWAY}) on {@link AdminCommandException} (e.g. user lacks Sys-WS rights, logged WARN).
+     */
     @POST
     @Path( "/reboot" )
     @Operation( summary = "Reboot the Miniserver",
@@ -404,6 +694,14 @@ public class ManagementResource
         }
     }
 
+    /**
+     * {@code POST /api/v1/token/kill} — invalidate the current Miniserver JWT.
+     * <p>
+     * If no token is held locally: HTTP 200 with {@code "no token to kill"}, no network call.
+     * Otherwise calls {@code session.killToken()} (sends {@code jdev/sys/killtoken/...} over the
+     * encrypted WS to invalidate server-side, then closes the local WS) and returns HTTP 200 with
+     * the current {@code state}. The next reconnect re-runs the full handshake.
+     */
     @POST
     @Path( "/token/kill" )
     @Operation( summary = "Invalidate the current miniserver JWT",
@@ -425,6 +723,17 @@ public class ManagementResource
                 "state", sessionTracker.state().name() ) ).build();
     }
 
+    /**
+     * {@code POST /api/v1/token/refresh} — manually trigger a JWT refresh.
+     * <p>
+     * Gated on {@code SessionState.RUNNING} and a locally-held token. Calls
+     * {@code session.refreshToken()} (sends {@code jdev/sys/refreshjwt/...} over the encrypted WS);
+     * the reply lands async and updates {@code token.expiresAt}. Returns immediately after the send
+     * (does not wait for the reply) — poll {@code /api/v1/state} for the new expiry.
+     *
+     * Responses: HTTP 409 ({@code CONFLICT}) when state != RUNNING ({@code not_running}) or no token
+     * held ({@code no_token}); 200 after the WS send.
+     */
     @POST
     @Path( "/token/refresh" )
     @Operation( summary = "Manually trigger a JWT refresh",
@@ -466,6 +775,16 @@ public class ManagementResource
                 "state", sessionTracker.state().name() ) ).build();
     }
 
+    /**
+     * {@code POST /api/v1/connect-with-bootstrap} — run bootstrap then open the WS session.
+     * <p>
+     * Step 1 {@code bootstrap.run()} (idempotent, re-runs the full sequence); on
+     * {@link BootstrapException} returns HTTP 502 ({@code BAD_GATEWAY}) with {@code step=bootstrap}
+     * and the connect step is NOT attempted (logged WARN). Step 2 {@code session.connectAndWait(...)};
+     * on success HTTP 200 with the bootstrap identity + token metadata, on {@link SessionException}
+     * HTTP 502 with {@code step=connect} + current state + the already-successful bootstrap status
+     * (logged WARN). Backs the dashboard "Connect to Miniserver" button.
+     */
     @POST
     @Path( "/connect-with-bootstrap" )
     @Operation( summary = "Atomically run HTTP bootstrap + open WS session",
@@ -539,6 +858,15 @@ public class ManagementResource
     //  Transport (MQTT broker)
     // ==========================================================================
 
+    /**
+     * {@code POST /api/v1/transport/connect} — connect to the MQTT broker.
+     * <p>
+     * Idempotent: if {@code mqtt.isConnected()} returns HTTP 200 with {@code status=already-connected}
+     * (no round-trip). Otherwise calls {@code mqtt.connect()} (opens the HiveMQ MQTT v5 connection,
+     * subscribes input topics, publishes 'online' presence). On success: HTTP 200 with
+     * {@code status=connected} + broker + scheme. On {@link TransportException}: HTTP 502
+     * ({@code BAD_GATEWAY}) with the error (logged WARN).
+     */
     @POST
     @Path( "/transport/connect" )
     @Operation( summary = "Connect to the MQTT broker",
@@ -573,6 +901,13 @@ public class ManagementResource
         }
     }
 
+    /**
+     * {@code POST /api/v1/transport/disconnect} — disconnect from the MQTT broker.
+     * <p>
+     * Idempotent: if not connected returns HTTP 200 with {@code status=already-disconnected}.
+     * Otherwise calls {@code mqtt.disconnect()} (publishes 'offline' presence then closes cleanly)
+     * and returns HTTP 200 with {@code status=disconnected}.
+     */
     @POST
     @Path( "/transport/disconnect" )
     @Operation( summary = "Disconnect from the MQTT broker",
@@ -589,6 +924,13 @@ public class ManagementResource
         return Response.ok( Map.of( "status", "disconnected" ) ).build();
     }
 
+    /**
+     * {@code GET /api/v1/transport/status} — lightweight broker connection probe.
+     * <p>
+     * Read-only; returns HTTP 200 with {@code connected} ({@code mqtt.isConnected()}), {@code broker}
+     * (host:port) and the resolved {@code scheme}. Cheaper than {@code /state} — no session/cache
+     * aggregation.
+     */
     @GET
     @Path( "/transport/status" )
     @Operation( summary = "Broker connection status",

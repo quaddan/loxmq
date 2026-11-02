@@ -52,6 +52,9 @@ import java.util.Map;
  * 502 depending on the failure class.
  *
  * <p>Spec: {@code docs/loxone/1700_Usermanagement.pdf} V17.
+ *
+ * <p>Posture: LAN-only, unauthenticated by design (no bearer auth) —
+ * all CRUD is relayed to the Miniserver over its admin channel.
  */
 @Path( "/api/v1" )
 @ApplicationScoped
@@ -71,6 +74,11 @@ public class UsersResource
     @Inject
     GroupMutationService groupMutations;
 
+    /**
+     * {@code GET /api/v1/users} — list all configured users.
+     * Relays the Miniserver user list. Returns 200 with the list,
+     * or the shared error envelope (400 / 503 / 504 / 502).
+     */
     @GET
     @Path( "/users" )
     public Response listUsers()
@@ -78,6 +86,13 @@ public class UsersResource
         return safe( () -> Response.ok( users.listUsers() ).build() );
     }
 
+    /**
+     * {@code GET /api/v1/users/{uuid}} — fetch one user by uuid.
+     *
+     * @param uuid user identifier (path param)
+     * @return 200 with the user, or the shared error envelope
+     *         (400 / 503 / 504 / 502)
+     */
     @GET
     @Path( "/users/{uuid}" )
     public Response getUser( @PathParam( "uuid" ) String uuid )
@@ -85,6 +100,11 @@ public class UsersResource
         return safe( () -> Response.ok( users.getUser( uuid ) ).build() );
     }
 
+    /**
+     * {@code GET /api/v1/groups} — list all configured user groups.
+     * Returns 200 with the group list, or the shared error envelope
+     * (400 / 503 / 504 / 502).
+     */
     @GET
     @Path( "/groups" )
     public Response listGroups()
@@ -92,6 +112,13 @@ public class UsersResource
         return safe( () -> Response.ok( users.listGroups() ).build() );
     }
 
+    /**
+     * {@code GET /api/v1/users-snapshot} — users + groups in one fetch.
+     * Dashboard helper: issues two admin commands in sequence but
+     * collapses them into a single REST round-trip. Returns 200 with
+     * the combined snapshot, or the shared error envelope
+     * (400 / 503 / 504 / 502).
+     */
     @GET
     @Path( "/users-snapshot" )
     public Response snapshot()

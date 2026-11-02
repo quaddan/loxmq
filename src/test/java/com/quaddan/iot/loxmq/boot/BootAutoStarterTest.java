@@ -314,6 +314,9 @@ class BootAutoStarterTest
         public boolean isConnected() { return failure == null; }
 
         @Override
+        public java.util.Optional< java.time.Instant > stateChangedAt() { return java.util.Optional.empty(); }
+
+        @Override
         public void publish( String t, int q, boolean r, byte[] p ) { /* no-op */ }
 
         @Override
