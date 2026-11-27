@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning 2.0](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-27
+
+### Fixed
+
+- **Miniserver WebSocket connection leak on reconnect** ([#31]). Every
+  reconnect opened a new Miniserver WebSocket without tearing down the previous
+  one: `JdkMiniserverWebSocket.connect()` overwrote the `socket` field with the
+  new connection, and `close()` only did a graceful `sendClose()` that times out
+  (and was swallowed) on a half-open link — so the old TCP connection lingered
+  `ESTABLISHED`. One socket leaked per reconnect until the Miniserver hit its
+  connection cap ("Maximum number of active connections reached", ~30 h for a
+  reporter seeing a 30-minute reconnect cadence), clearable only by a reboot.
+  - `connect()` now hard-`abort()`s any lingering socket **before** opening a
+    new one, so a reconnect can never leak the old connection.
+  - `close()` now falls back to `abort()` when the graceful close does not
+    complete, so a half-open / unresponsive link is actually torn down.
+  - New `JdkMiniserverWebSocketTest` covers both guarantees.
+  - Note: the periodic reconnect cadence itself is Miniserver-driven (loxmq has
+    no 30-minute timer; the only periodic task is the 24 h JWT refresh) — this
+    fix makes the reconnect leak-free regardless of what triggers it.
+
+[#31]: https://github.com/quaddan/loxmq/issues/31
+
 ## [1.2.0] - 2026-11-02
 
 ### Capabilities

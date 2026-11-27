@@ -67,7 +67,9 @@ public class JdkMiniserverWebSocket implements MiniserverWebSocket
     MiniserverHttpClientFactory clientFactory;
 
     private          HttpClient httpClient;
-    private volatile WebSocket  socket;
+    // Package-private (not private) so JdkMiniserverWebSocketTest can install a
+    // fake socket and assert the reconnect / close abort behaviour (issue #31).
+    volatile WebSocket socket;
 
     @PostConstruct
     void init()
@@ -85,6 +87,16 @@ public class JdkMiniserverWebSocket implements MiniserverWebSocket
     @Override
     public void connect( URI uri, Listener listener )
     {
+        // Never overwrite a live socket. A reconnect reaches connect() while the
+        // previous WebSocket may still be around — e.g. a half-open link whose
+        // graceful close timed out, or a remote onClose that transitioned the
+        // session without a local close(). Overwriting `socket` would drop the
+        // only reference to the old WebSocket WITHOUT tearing down its TCP
+        // connection, leaking one ESTABLISHED socket to the Miniserver per
+        // reconnect until it hits its connection cap (issue #31). Hard-abort any
+        // lingering socket first so that can never happen.
+        abortLingeringSocket();
+
         LOG.infof( "WS connect → %s", uri );
         Duration handshakeTimeout = config.miniserver().connection().http().requestTimeout()
                                           .plusSeconds( 5 );
@@ -166,7 +178,48 @@ public class JdkMiniserverWebSocket implements MiniserverWebSocket
         }
         catch ( Exception e )
         {
-            LOG.debugf( "Ignored error closing WS: %s", e.getMessage() );
+            // The graceful closing handshake did not complete in time — almost
+            // always a half-open link where the Miniserver stopped responding
+            // (no RST). sendClose() alone leaves the TCP connection lingering
+            // ESTABLISHED; abort() force-closes it so we don't leak it (#31).
+            LOG.debugf( "Graceful WS close did not complete (%s) — aborting", e.getMessage() );
+            abortQuietly( s );
+        }
+    }
+
+    /**
+     * Hard-close any socket still referenced by {@link #socket}, then clear the
+     * field. Package-private so the reconnect-leak guard can be unit-tested.
+     */
+    void abortLingeringSocket()
+    {
+        WebSocket previous = socket;
+        if ( previous != null )
+        {
+            LOG.debug( "Aborting a lingering previous WebSocket before (re)connecting" );
+            abortQuietly( previous );
+            socket = null;
+        }
+    }
+
+    /**
+     * Force-close a WebSocket's TCP connection immediately, swallowing any
+     * error. Unlike {@link WebSocket#sendClose} this does not wait for the
+     * remote's Close reply, so it reliably tears down a half-open or
+     * unresponsive link instead of leaving it ESTABLISHED.
+     */
+    private static void abortQuietly( WebSocket s )
+    {
+        if ( s != null )
+        {
+            try
+            {
+                s.abort();
+            }
+            catch ( RuntimeException ignored )
+            {
+                // best-effort hard close — nothing else we can do
+            }
         }
     }
 
